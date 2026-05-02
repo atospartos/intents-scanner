@@ -22,7 +22,7 @@ export const config = {
   
   tokens: {
     stablecoinSymbols: ['USDC'],
-    allowedBlockchains: ['near', 'sol', 'sui', 'eth', 'bsc', 'arb', 'base', 'avax', 'pol', 'op', 'ton', 'tron'],
+    allowedBlockchains: ['near', 'sol', 'sui', 'eth', 'bsc', 'arb', 'base', 'avax', 'pol', 'op', 'ton', 'tron', 'zec', 'aptos', 'cardano', 'ltc', 'bch', 'dash'],
   },
   
   dryRunOnly: process.env.DRY_RUN_ONLY !== 'false',

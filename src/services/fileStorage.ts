@@ -53,7 +53,7 @@ export interface ProfitableRoute {
   avgProfit: number;
   minProfit: number;
   maxProfit: number;
-  tokensInfo?: StoredTokenInfo[];
+  tokensInfo?: StoredTokenInfo[];  // ← НОВОЕ ПОЛЕ
 }
 
 export class FileStorage {

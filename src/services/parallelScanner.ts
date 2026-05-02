@@ -47,6 +47,7 @@ export class ParallelScanner {
   private completedRequests = 0;
   private activeTimeouts: Set<NodeJS.Timeout> = new Set();
   private silentMode = false;
+  private totalPathsFixed = 0;
 
   setSilentMode(silent: boolean): void {
     this.silentMode = silent;
@@ -68,12 +69,11 @@ export class ParallelScanner {
     this.completedRequests = 0;
     this.totalRequests = 0;
     this.activeTimeouts.clear();
-    
-    const totalPaths = paths.length;
+    this.totalPathsFixed = paths.length;
     
     if (!this.silentMode) {
       console.log(`\n🚀 ЗАПУСК АСИНХРОННОГО СКАНИРОВАНИЯ`);
-      console.log(`   Всего путей: ${totalPaths}`);
+      console.log(`   Всего путей: ${this.totalPathsFixed}`);
       console.log(`   Интервал между отправками: ${this.requestDelay}мс\n`);
     }
     
@@ -114,13 +114,13 @@ export class ParallelScanner {
     
     const maxWaitTime = 600000;
     const waitStart = Date.now();
-    let lastCompleted = 0;
+    let lastProgress = 0;
     
     while (this.completedRequests < this.totalRequests && (Date.now() - waitStart) < maxWaitTime) {
       await this.delay(500);
       
-      if (!this.silentMode && (this.completedRequests - lastCompleted >= 50 || this.completedRequests === this.totalRequests)) {
-        lastCompleted = this.completedRequests;
+      if (!this.silentMode && this.completedRequests !== lastProgress) {
+        lastProgress = this.completedRequests;
         const progress = ((this.completedRequests / this.totalRequests) * 100).toFixed(1);
         console.log(`   📊 Прогресс: ${this.completedRequests}/${this.totalRequests} (${progress}%) | Найдено: ${this.profitableFound.length}`);
       }
@@ -237,10 +237,7 @@ export class ParallelScanner {
     const pathState = this.pathStates.get(result.pathId);
     if (!pathState || pathState.completed) return;
     
-    // Предотвращаем повторную обработку одного шага
-    if (pathState.results.has(result.stepIndex)) {
-      return;
-    }
+    if (pathState.results.has(result.stepIndex)) return;
     
     pathState.results.set(result.stepIndex, result);
     this.completedRequests++;
@@ -287,15 +284,37 @@ export class ParallelScanner {
     
     this.results.push(pathResult);
     
-    const pathStr = pathState.pathStr.join(' → ');
-    const profitEmoji = profitPercent >= config.scan.minProfitPercent ? '💰' : (profitPercent > 0 ? '✅' : '📉');
-    const elapsed = Date.now() - pathState.startTime;
-    
     if (!this.silentMode) {
-      console.log(`${profitEmoji} ${pathStr}: ${profitPercent > 0 ? '+' : ''}${profitPercent.toFixed(4)}% (${elapsed}ms)`);
+      const profitEmoji = profitPercent >= config.scan.minProfitPercent ? '💰' : (profitPercent > 0 ? '✅' : '📉');
+      const elapsed = Date.now() - pathState.startTime;
+      console.log(`${profitEmoji} ${pathState.pathStr.join(' → ')}: ${profitPercent > 0 ? '+' : ''}${profitPercent.toFixed(4)}% (${elapsed}ms)`);
     }
     
     if (profitPercent >= config.scan.minProfitPercent && profitPercent < 50) {
+      const tokensInfo = [];
+      const addedTokens = new Set<string>();
+      
+      for (const step of pathState.steps) {
+        if (!addedTokens.has(step.from.assetId)) {
+          tokensInfo.push({
+            symbol: step.from.symbol,
+            assetId: step.from.assetId,
+            blockchain: step.from.blockchain,
+            decimals: step.from.decimals,
+          });
+          addedTokens.add(step.from.assetId);
+        }
+        if (!addedTokens.has(step.to.assetId)) {
+          tokensInfo.push({
+            symbol: step.to.symbol,
+            assetId: step.to.assetId,
+            blockchain: step.to.blockchain,
+            decimals: step.to.decimals,
+          });
+          addedTokens.add(step.to.assetId);
+        }
+      }
+      
       const profitableRoute: ProfitableRoute = {
         id: pathState.pathId,
         path: pathState.pathStr,
@@ -311,13 +330,14 @@ export class ParallelScanner {
         avgProfit: profitPercent,
         minProfit: profitPercent,
         maxProfit: profitPercent,
+        tokensInfo,
       };
       
       fileStorage.saveProfitableRoute(profitableRoute);
       this.profitableFound.push(profitableRoute);
       
       if (!this.silentMode) {
-        console.log(`🔥💰 ПРИБЫЛЬНЫЙ МАРШРУТ: ${pathStr} → +${profitPercent.toFixed(4)}% ($${profitAmount.toFixed(4)})`);
+        console.log(`🔥💰 ПРИБЫЛЬНЫЙ МАРШРУТ: ${pathState.pathStr.join(' → ')} → +${profitPercent.toFixed(4)}% ($${profitAmount.toFixed(4)})`);
       }
     }
   }
