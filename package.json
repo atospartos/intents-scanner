@@ -1,0 +1,25 @@
+{
+  "name": "near-arbitrage-bot",
+  "version": "2.0.0",
+  "description": "High-speed arbitrage bot for NEAR Intents API",
+  "main": "dist/index.js",
+  "scripts": {
+    "build": "tsc",
+    "start": "node dist/index.js",
+    "dev": "ts-node src/index.ts",
+    "dev:watch": "nodemon --exec ts-node src/index.ts",
+    "clean": "rm -rf dist logs storage",
+    "execute": "ts-node src/execute-arbitrage.ts",
+    "execute:all": "ts-node src/execute-arbitrage.ts --all"
+  },
+  "dependencies": {
+    "axios": "^1.7.0",
+    "dotenv": "^16.4.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.12.0",
+    "typescript": "^5.4.0",
+    "ts-node": "^10.9.0",
+    "nodemon": "^3.1.0"
+  }
+}
