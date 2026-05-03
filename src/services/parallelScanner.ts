@@ -1,9 +1,7 @@
+// src/services/parallelScanner.ts
 import { Token, nearIntentsClient } from '../clients/nearIntentsClient';
 import { config } from '../config';
 import { fileStorage, ProfitableRoute } from './fileStorage';
-
-const quoteCache = new Map<string, { amountOut: string; timestamp: number }>();
-const CACHE_TTL = 60000;
 
 interface StepResult {
   pathId: string;
@@ -39,19 +37,14 @@ export interface PathResult {
 
 export class ParallelScanner {
   private pathStates: Map<string, PathState> = new Map();
-  private requestIdCounter = 0;
   private results: PathResult[] = [];
   private profitableFound: ProfitableRoute[] = [];
   private requestDelay = 200;
-  private totalRequests = 0;
-  private completedRequests = 0;
+  private totalPaths = 0;
+  private completedPaths = 0;
   private activeTimeouts: Set<NodeJS.Timeout> = new Set();
   private silentMode = false;
   private totalPathsFixed = 0;
-
-  setSilentMode(silent: boolean): void {
-    this.silentMode = silent;
-  }
 
   async scanPaths(
     paths: Array<{
@@ -65,20 +58,20 @@ export class ParallelScanner {
     this.results = [];
     this.profitableFound = [];
     this.pathStates.clear();
-    this.requestIdCounter = 0;
-    this.completedRequests = 0;
-    this.totalRequests = 0;
+    this.completedPaths = 0;
     this.activeTimeouts.clear();
+    this.totalPaths = paths.length;
     this.totalPathsFixed = paths.length;
     
     if (!this.silentMode) {
       console.log(`\n🚀 ЗАПУСК АСИНХРОННОГО СКАНИРОВАНИЯ`);
-      console.log(`   Всего путей: ${this.totalPathsFixed}`);
+      console.log(`   Всего путей: ${this.totalPaths}`);
       console.log(`   Интервал между отправками: ${this.requestDelay}мс\n`);
     }
     
     const allStartTime = Date.now();
     
+    // Отправляем первые запросы для всех путей
     for (let i = 0; i < paths.length; i++) {
       const path = paths[i];
       const pathId = this.generatePathId(path);
@@ -104,7 +97,6 @@ export class ParallelScanner {
       this.pathStates.set(pathId, pathState);
       
       const firstStep = steps[0];
-      this.totalRequests++;
       this.sendRequest(pathId, 0, firstStep, startAmount);
       
       if (i < paths.length - 1) {
@@ -112,19 +104,45 @@ export class ParallelScanner {
       }
     }
     
-    const maxWaitTime = 600000;
-    const waitStart = Date.now();
-    let lastProgress = 0;
+    // Добавляем таймер для проверки зависших путей (каждые 10 секунд)
+    const checkInterval = setInterval(() => {
+      const now = Date.now();
+      for (const [pathId, state] of this.pathStates) {
+        if (!state.completed && (now - state.startTime) > 120000) { // 2 минуты таймаут
+          console.log(`   ⚠️ Таймаут пути: ${state.pathStr.join(' → ')}`);
+          // Заполняем недостающие шаги ошибкой
+          for (let i = 0; i < state.stepCount; i++) {
+            if (!state.results.has(i)) {
+              state.results.set(i, {
+                pathId,
+                stepIndex: i,
+                amountOut: '',
+                amountOutFormatted: '',
+                amountOutUsd: '',
+                success: false,
+                error: 'timeout',
+              });
+            }
+          }
+          this.completePath(state);
+          this.completedPaths++;
+        }
+      }
+    }, 10000);
     
-    while (this.completedRequests < this.totalRequests && (Date.now() - waitStart) < maxWaitTime) {
-      await this.delay(500);
+    // Ждём завершения всех путей (без вывода прогресса)
+    let lastPrinted = 0;
+    while (this.completedPaths < this.totalPaths) {
+      await this.delay(1000);
       
-      if (!this.silentMode && this.completedRequests !== lastProgress) {
-        lastProgress = this.completedRequests;
-        const progress = ((this.completedRequests / this.totalRequests) * 100).toFixed(1);
-        console.log(`   📊 Прогресс: ${this.completedRequests}/${this.totalRequests} (${progress}%) | Найдено: ${this.profitableFound.length}`);
+      // Выводим прогресс только раз в 10 секунд и только если есть изменения
+      if (!this.silentMode && this.completedPaths !== lastPrinted) {
+        lastPrinted = this.completedPaths;
+        // Не выводим прогресс в консоль, просто обновляем переменную
       }
     }
+    
+    clearInterval(checkInterval);
     
     for (const timeout of this.activeTimeouts) {
       clearTimeout(timeout);
@@ -132,44 +150,23 @@ export class ParallelScanner {
     this.activeTimeouts.clear();
     
     const elapsed = (Date.now() - allStartTime) / 1000;
+    
+    // Выводим только итоговую статистику
     if (!this.silentMode) {
       console.log(`\n✅ Сканирование завершено за ${elapsed.toFixed(1)} секунд`);
-      console.log(`   Всего запросов: ${this.completedRequests}/${this.totalRequests}`);
+      console.log(`   Обработано путей: ${this.completedPaths}/${this.totalPaths}`);
       console.log(`   Найдено прибыльных путей: ${this.profitableFound.length}`);
     }
     
     return this.results;
   }
 
-  private generatePathId(path: { tokens: Token[] }): string {
-    return path.tokens.map(t => t.symbol).join('_');
-  }
-
-  private buildSteps(tokens: Token[]): Array<{ from: Token; to: Token }> {
-    const steps = [];
-    for (let i = 0; i < tokens.length - 1; i++) {
-      steps.push({ from: tokens[i], to: tokens[i + 1] });
-    }
-    return steps;
-  }
-
-  private async sendRequest(pathId: string, stepIndex: number, step: { from: Token; to: Token }, amountIn: string): Promise<void> {
-    const cacheKey = `${step.from.assetId}|${step.to.assetId}|${amountIn}`;
-    const cached = quoteCache.get(cacheKey);
-    
-    if (cached && Date.now() - cached.timestamp < CACHE_TTL) {
-      const result: StepResult = {
-        pathId,
-        stepIndex,
-        amountOut: cached.amountOut,
-        amountOutFormatted: (parseFloat(cached.amountOut) / Math.pow(10, step.to.decimals)).toFixed(6),
-        amountOutUsd: ((parseFloat(cached.amountOut) / Math.pow(10, step.to.decimals)) * parseFloat(step.to.price)).toFixed(4),
-        success: true,
-      };
-      this.handleStepResult(result);
-      return;
-    }
-    
+  private async sendRequest(
+    pathId: string, 
+    stepIndex: number, 
+    step: { from: Token; to: Token }, 
+    amountIn: string
+  ): Promise<void> {
     const timeoutId = setTimeout(() => {
       const result: StepResult = {
         pathId,
@@ -201,11 +198,6 @@ export class ParallelScanner {
         throw new Error(`Нет ликвидности: ${step.from.symbol} → ${step.to.symbol}`);
       }
       
-      quoteCache.set(cacheKey, {
-        amountOut: quote.quote.amountOut,
-        timestamp: Date.now(),
-      });
-      
       const result: StepResult = {
         pathId,
         stepIndex,
@@ -233,30 +225,65 @@ export class ParallelScanner {
     }
   }
 
-  private handleStepResult(result: StepResult): void {
-    const pathState = this.pathStates.get(result.pathId);
-    if (!pathState || pathState.completed) return;
-    
-    if (pathState.results.has(result.stepIndex)) return;
-    
-    pathState.results.set(result.stepIndex, result);
-    this.completedRequests++;
-    
-    if (result.success && result.stepIndex + 1 < pathState.stepCount) {
-      const nextStep = pathState.steps[result.stepIndex + 1];
-      this.totalRequests++;
-      this.sendRequest(result.pathId, result.stepIndex + 1, nextStep, result.amountOut);
+private handleStepResult(result: StepResult): void {
+  const pathState = this.pathStates.get(result.pathId);
+  if (!pathState || pathState.completed) return;
+  
+  if (pathState.results.has(result.stepIndex)) return;
+  
+  pathState.results.set(result.stepIndex, result);
+  
+  // Отправляем следующий шаг только если текущий успешен
+  if (result.success && result.stepIndex + 1 < pathState.stepCount) {
+    const nextStep = pathState.steps[result.stepIndex + 1];
+    this.sendRequest(result.pathId, result.stepIndex + 1, nextStep, result.amountOut);
+  }
+  
+  // Проверяем, нужно ли завершить путь
+  const isLastStep = result.stepIndex === pathState.stepCount - 1;
+  const hasError = !result.success;
+  
+  if (isLastStep || hasError) {
+    // Заполняем все недостающие шаги ошибкой
+    for (let i = 0; i < pathState.stepCount; i++) {
+      if (!pathState.results.has(i)) {
+        pathState.results.set(i, {
+          pathId: result.pathId,
+          stepIndex: i,
+          amountOut: '',
+          amountOutFormatted: '',
+          amountOutUsd: '',
+          success: false,
+          error: 'path terminated',
+        });
+      }
     }
-    
-    if (pathState.results.size === pathState.stepCount) {
-      this.completePath(pathState);
+    this.completePath(pathState);
+    this.completedPaths++;
+  }
+}
+
+  private generatePathId(path: { tokens: Token[] }): string {
+    return path.tokens.map(t => t.symbol).join('_');
+  }
+
+  private buildSteps(tokens: Token[]): Array<{ from: Token; to: Token }> {
+    const steps = [];
+    for (let i = 0; i < tokens.length - 1; i++) {
+      steps.push({ from: tokens[i], to: tokens[i + 1] });
     }
+    return steps;
+  }
+
+  setSilentMode(silent: boolean): void {
+    this.silentMode = silent;
   }
 
   private completePath(pathState: PathState): void {
     if (pathState.completed) return;
     pathState.completed = true;
     
+    // Проверяем, все ли шаги успешны
     let allSuccess = true;
     for (let i = 0; i < pathState.stepCount; i++) {
       const result = pathState.results.get(i);
@@ -266,8 +293,10 @@ export class ParallelScanner {
       }
     }
     
+    // Если не все шаги успешны - просто выходим
     if (!allSuccess) return;
     
+    // Вычисляем прибыль только если все шаги успешны
     const lastStepResult = pathState.results.get(pathState.stepCount - 1)!;
     const finalAmountUSD = parseFloat(lastStepResult.amountOutUsd);
     const profitAmount = finalAmountUSD - pathState.testAmountUSD;
@@ -284,12 +313,14 @@ export class ParallelScanner {
     
     this.results.push(pathResult);
     
+    // Выводим пути
     if (!this.silentMode) {
       const profitEmoji = profitPercent >= config.scan.minProfitPercent ? '💰' : (profitPercent > 0 ? '✅' : '📉');
       const elapsed = Date.now() - pathState.startTime;
       console.log(`${profitEmoji} ${pathState.pathStr.join(' → ')}: ${profitPercent > 0 ? '+' : ''}${profitPercent.toFixed(4)}% (${elapsed}ms)`);
     }
     
+    // Сохраняем прибыльные пути
     if (profitPercent >= config.scan.minProfitPercent && profitPercent < 50) {
       const tokensInfo = [];
       const addedTokens = new Set<string>();
@@ -301,6 +332,7 @@ export class ParallelScanner {
             assetId: step.from.assetId,
             blockchain: step.from.blockchain,
             decimals: step.from.decimals,
+            price: step.from.price,
           });
           addedTokens.add(step.from.assetId);
         }
@@ -310,6 +342,7 @@ export class ParallelScanner {
             assetId: step.to.assetId,
             blockchain: step.to.blockchain,
             decimals: step.to.decimals,
+            price: step.to.price,
           });
           addedTokens.add(step.to.assetId);
         }
@@ -333,7 +366,7 @@ export class ParallelScanner {
         tokensInfo,
       };
       
-      fileStorage.saveProfitableRoute(profitableRoute);
+      fileStorage.saveProfitableRoutes([profitableRoute]);
       this.profitableFound.push(profitableRoute);
       
       if (!this.silentMode) {

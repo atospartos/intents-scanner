@@ -1,5 +1,6 @@
 // src/utils/crypto.ts
-import { sha256 } from '@noble/hashes/sha2';
+// import { sha256 } from '@noble/hashes/sha2';
+import { sha256 as noble_sha256 } from '@noble/hashes/sha2.js';
 import * as ed from '@noble/ed25519';
 
 export class Ed25519Key {
@@ -26,7 +27,7 @@ export class Ed25519Key {
 }
 
 export function hash256(data: Uint8Array): Uint8Array {
-  return sha256(data);
+  return noble_sha256(data);
 }
 
 export function hexToUint8Array(hex: string): Uint8Array {

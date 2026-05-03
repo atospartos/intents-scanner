@@ -163,49 +163,46 @@ export class FileStorage {
   }
 
   // ========== ПРИБЫЛЬНЫЕ МАРШРУТЫ ==========
-
-  saveProfitableRoute(route: ProfitableRoute): void {
+  saveProfitableRoutes(routes: ProfitableRoute[]): void {
     try {
       let profitable: ProfitableRoute[] = [];
       if (fs.existsSync(this.profitablePath)) {
         profitable = JSON.parse(fs.readFileSync(this.profitablePath, 'utf-8'));
       }
 
-      const existingIndex = profitable.findIndex(r => r.id === route.id);
+      for (const route of routes) {
+        const existingIndex = profitable.findIndex(r => r.id === route.id);
 
-      if (existingIndex !== -1) {
-        // Обновляем существующий
-        const existing = profitable[existingIndex];
-        existing.lastSeen = route.detectedAt;
-        existing.timesSeen++;
-        existing.profitPercent = route.profitPercent;
-        existing.profitAmount = route.profitAmount;
+        if (existingIndex !== -1) {
+          const existing = profitable[existingIndex];
+          existing.lastSeen = route.detectedAt;
+          existing.timesSeen++;
+          existing.profitPercent = route.profitPercent;
+          existing.profitAmount = route.profitAmount;
+          existing.tokensInfo = route.tokensInfo;  // Обновляем токены
 
-        // Обновляем статистику
-        const newAvg = (existing.avgProfit * (existing.timesSeen - 1) + route.profitPercent) / existing.timesSeen;
-        existing.avgProfit = newAvg;
-        existing.minProfit = Math.min(existing.minProfit, route.profitPercent);
-        existing.maxProfit = Math.max(existing.maxProfit, route.profitPercent);
+          const newAvg = (existing.avgProfit * (existing.timesSeen - 1) + route.profitPercent) / existing.timesSeen;
+          existing.avgProfit = newAvg;
+          existing.minProfit = Math.min(existing.minProfit, route.profitPercent);
+          existing.maxProfit = Math.max(existing.maxProfit, route.profitPercent);
 
-        profitable[existingIndex] = existing;
-      } else {
-        // Добавляем новый
-        profitable.push({
-          ...route,
-          timesSeen: 1,
-          avgProfit: route.profitPercent,
-          minProfit: route.profitPercent,
-          maxProfit: route.profitPercent,
-        });
+          profitable[existingIndex] = existing;
+        } else {
+          profitable.push({
+            ...route,
+            timesSeen: 1,
+            avgProfit: route.profitPercent,
+            minProfit: route.profitPercent,
+            maxProfit: route.profitPercent,
+          });
+        }
       }
 
-      // Сортируем по прибыли
-      profitable.sort((a, b) => b.avgProfit - a.avgProfit);
-
+      profitable.sort((a, b) => b.profitPercent - a.profitPercent);
       fs.writeFileSync(this.profitablePath, JSON.stringify(profitable, null, 2));
-      console.log(`💰 Прибыльный маршрут сохранён: ${route.path.join(' → ')} (${route.profitPercent.toFixed(4)}%)`);
+      console.log(`💾 Сохранено ${routes.length} прибыльных маршрутов`);
     } catch (error: any) {
-      console.error(`❌ Ошибка сохранения прибыльного маршрута: ${error.message}`);
+      console.error(`❌ Ошибка сохранения маршрутов: ${error.message}`);
     }
   }
 

@@ -223,6 +223,31 @@ export class NearRpcClient {
     const balanceInNear = Number(balanceInYocto) / 1e24;
     return balanceInNear.toFixed(4);
   }
+// src/clients/nearRpcClient.ts - добавляем метод
+
+async viewFunction(params: {
+  contractId: string;
+  methodName: string;
+  args: any;
+}): Promise<any> {
+  const argsBase64 = Buffer.from(JSON.stringify(params.args)).toString('base64');
+  
+  const result = await this.rpcCall('query', {
+    request_type: 'call_function',
+    finality: 'final',
+    account_id: params.contractId,
+    method_name: params.methodName,
+    args_base64: argsBase64
+  });
+  
+  // Декодируем результат из base64
+  if (result.result && result.result.length > 0) {
+    return JSON.parse(Buffer.from(result.result[0]).toString());
+  }
+  
+  return result;
+}
+
 }
 
 export const nearRpcClient = new NearRpcClient();

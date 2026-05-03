@@ -26,11 +26,10 @@ export const config = {
 
   // Настройки сканирования
   scan: {
-    intervalSec: parseInt(process.env.SCAN_INTERVAL_SEC || '30'),
-    minProfitPercent: parseFloat(process.env.MIN_PROFIT_PERCENT || '0.5'),
-    maxTokens: parseInt(process.env.MAX_TOKENS || '10'),
-    maxPathLength: parseInt(process.env.MAX_PATH_LENGTH || '3'),
-    maxWorkingTokens: parseInt(process.env.MAX_WORKING_TOKENS || '20'),
+    intervalSec: parseInt(process.env.SCAN_INTERVAL_SEC || '10'),
+    minProfitPercent: parseFloat(process.env.MIN_PROFIT_PERCENT || '0.01'),  // 🔥 0.03% 
+    maxWorkingTokens: parseInt(process.env.MAX_TOKENS || '1500'),
+    pathLengths: [4],  // 🔥 ТОЛЬКО ДЛИНА 4!
   },
 
   // Режимы
@@ -44,22 +43,22 @@ export const config = {
 
   // Executor настройки
   executor: {
-    minProfitPercent: parseFloat(process.env.EXECUTOR_MIN_PROFIT_PERCENT || '0.5'),
-    executionDelayMs: parseInt(process.env.EXECUTOR_DELAY_MS || '2000'),
-    baseAmount: parseFloat(process.env.EXECUTOR_BASE_AMOUNT || '100'),
+    minProfitPercent: parseFloat(process.env.EXECUTOR_MIN_PROFIT_PERCENT || '0.01'),
+    executionDelayMs: parseInt(process.env.EXECUTOR_DELAY_MS || '200'),
+    baseAmount: parseFloat(process.env.EXECUTOR_BASE_AMOUNT || '50'),
   },
 
   // Фильтрация токенов
   filters: {
-    excludeSymbols: ['USDC', 'USDT', 'DAI', 'USDC.e', 'USDt', 'FRAX'],
-    minPrice: 0.10,
-    maxPrice: 5000,
+    excludeSymbols: ['USDC'],
+    minPrice: 0.000000001,
+    maxPrice: 500000,
   },
 
   // Токены
   tokens: {
-    stablecoinSymbols: ['USDC', 'USDT', 'DAI'],
-    allowedBlockchains: ['near', 'eth', 'sol', 'base', 'arb'],
+    stablecoinSymbols: ['USDC'],
+    allowedBlockchains: ['near', 'sol', 'sui', 'eth', 'bsc', 'arb', 'base', 'avax', 'pol', 'op', 'ton', 'tron', 'zec', 'aptos', 'cardano', 'ltc', 'bch', 'dash'],
   },
 };
 

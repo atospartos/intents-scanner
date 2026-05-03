@@ -10,7 +10,8 @@
     "dev:watch": "nodemon --exec ts-node src/index.ts",
     "clean": "rm -rf dist logs storage",
     "executor": "ts-node src/run-executor.ts",
-    "executor:dry": "DRY_RUN_ONLY=true ts-node src/run-executor.ts"
+    "executor:dry": "DRY_RUN_ONLY=true ts-node src/run-executor.ts",
+    "test:api-format": "ts-node src/test-api-format.ts"
   },
   "dependencies": {
     "@noble/ed25519": "^3.1.0",
