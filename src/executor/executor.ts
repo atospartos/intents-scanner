@@ -3,7 +3,7 @@ import { nearRpcClient } from '../clients/nearRpcClient';
 import { config } from '../config';
 import { logger } from '../utils/logger';
 import { stringToUint8Array } from '../utils/crypto';
-import { Action } from '../utils/borsh';
+import { Action, ActionType } from '../utils/borsh';  // Добавляем импорт ActionType
 import fs from 'fs';
 import path from 'path';
 
@@ -12,7 +12,7 @@ export interface TokenInfo {
   assetId: string;
   blockchain: string;
   decimals: number;
-  price?: string;  // Добавляем опциональное поле price
+  price?: string;
 }
 
 export interface ProfitableRoute {
@@ -56,7 +56,6 @@ export class Executor {
       config.executor.baseAmount * Math.pow(10, startToken.decimals)
     );
     
-    // Рассчитываем ожидаемый выход на основе цены (если есть)
     let expectedOut = 0;
     if (endToken.price) {
       expectedOut = (config.executor.baseAmount / parseFloat(endToken.price)) 
@@ -81,15 +80,22 @@ export class Executor {
     const argsJson = JSON.stringify(args);
     const argsBase64 = Buffer.from(argsJson).toString('base64');
     
-    return [{
-      enum: 'functionCall',
+    // Согласно документации NEAR:
+    // - Максимальное количество газа на транзакцию = 300 TGas
+    // - 1 TGas ≈ 1ms вычислительного времени
+    const GAS_FOR_FUNCTION_CALL = 300_000_000_000_000n; // 300 TGas
+    
+    const action: Action = {
+      type: ActionType.FunctionCall,  // 2 для FunctionCall
       functionCall: {
         methodName: 'execute_intent',
         args: stringToUint8Array(argsBase64),
-        gas: 300000000000000n,
+        gas: GAS_FOR_FUNCTION_CALL,
         deposit: 0n
       }
-    }];
+    };
+    
+    return [action];
   }
 
   async executeAtomicSwap(route: ProfitableRoute): Promise<ExecutionResult> {
@@ -174,6 +180,8 @@ export class Executor {
   }
 
   async executeProfitableRoutes(): Promise<ExecutionResult[]> {
+    await nearRpcClient.init();
+    
     const routes = this.loadRoutesFromFile();
     
     if (routes.length === 0) {

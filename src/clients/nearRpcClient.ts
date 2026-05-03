@@ -7,10 +7,10 @@ import {
   serializeTransaction, 
   serializeSignedTransaction, 
   hexToUint8Array,
-  uint8ArrayToHex,
   Transaction,
   SignedTransaction,
-  Action
+  Action,
+  ActionType
 } from '../utils/borsh';
 
 // Типы ответов RPC
@@ -66,12 +66,28 @@ export interface SendTxResult {
 export class NearRpcClient {
   private rpcUrl: string;
   private accountId: string;
-  private key: Ed25519Key;
+  private key: Ed25519Key | null = null;
+  private initialized: boolean = false;
 
   constructor() {
     this.rpcUrl = config.near.nodeUrl;
     this.accountId = config.near.accountId;
+  }
+
+  // Инициализация криптографии
+  async init(): Promise<void> {
+    if (this.initialized) return;
+    
     this.key = new Ed25519Key(config.near.privateKey);
+    this.initialized = true;
+    logger.info(`🔐 Криптография инициализирована`);
+  }
+
+  // Приватный метод для проверки инициализации
+  private async ensureInit(): Promise<void> {
+    if (!this.initialized) {
+      await this.init();
+    }
   }
 
   private async rpcCall<T = any>(method: string, params: any): Promise<T> {
@@ -134,14 +150,21 @@ export class NearRpcClient {
     nonce: number,
     blockHash: string
   ): Promise<string> {
-    // Формируем транзакцию
+    // Убеждаемся, что криптография инициализирована
+    await this.ensureInit();
+    
+    if (!this.key) {
+      throw new Error('Ключ не инициализирован');
+    }
+    
+    // Формируем транзакцию согласно документации NEAR
     const transaction: Transaction = {
       signerId: this.accountId,
       publicKey: {
-        keyType: 0,
+        keyType: 0,  // ED25519
         data: this.key.publicKey
       },
-      nonce: BigInt(nonce + 1),
+      nonce: BigInt(nonce + 1),  // nonce увеличивается на 1
       receiverId: receiverId,
       blockHash: hexToUint8Array(blockHash),
       actions: actions
