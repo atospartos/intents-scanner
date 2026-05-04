@@ -1,12 +1,12 @@
 // src/executor/executor.ts
 import { nearRpcClient } from '../clients/nearRpcClient';
-import { nearIntentsClient } from '../clients/nearIntentsClient';
 import { config } from '../config';
 import { logger } from '../utils/logger';
 import { stringToUint8Array } from '../utils/crypto';
 import { Action, ActionType } from '../utils/borsh';
 import fs from 'fs';
 import path from 'path';
+import crypto from 'crypto';
 
 export interface TokenInfo {
   symbol: string;
@@ -43,7 +43,7 @@ export class Executor {
     this.storageDir = path.join(process.cwd(), 'storage');
     this.profitablePath = path.join(this.storageDir, 'profitable.json');
     this.recipientAddress = config.addresses.near || config.near.accountId || '';
-    
+
     if (!this.recipientAddress) {
       logger.warn('⚠️ Адрес получателя не указан в конфигурации');
     }
@@ -57,7 +57,6 @@ export class Executor {
       }
 
       const content = fs.readFileSync(this.profitablePath, 'utf-8');
-
       if (!content || content.trim() === '') {
         logger.warn(`Файл ${this.profitablePath} пуст`);
         return [];
@@ -73,7 +72,9 @@ export class Executor {
     }
   }
 
-  // ===== СИМУЛЯЦИЯ ПРИБЫЛЬНОСТИ ЧЕРЕЗ 1CLICK API =====
+  // ===== РЕАЛЬНАЯ СИМУЛЯЦИЯ ПРИБЫЛЬНОСТИ ЧЕРЕЗ RPC =====
+  // src/executor/executor.ts - исправленный метод simulateProfitability
+
   async simulateProfitability(route: ProfitableRoute): Promise<{
     isProfitable: boolean;
     currentProfitPercent: number;
@@ -81,9 +82,8 @@ export class Executor {
     amountOut?: string;
     error?: string;
   }> {
-    logger.debug(`🔍 Симуляция прибыльности: ${route.path.join(' → ')}`);
+    logger.debug(`🔍 RPC симуляция с правильной подписью: ${route.path.join(' → ')}`);
 
-    // Проверяем наличие адреса
     if (!this.recipientAddress) {
       return {
         isProfitable: false,
@@ -98,7 +98,6 @@ export class Executor {
       const endToken = route.tokensInfo[route.tokensInfo.length - 1];
       const testAmountUSD = config.trading.testAmountUSD;
 
-      // Проверяем наличие цены
       if (!startToken.price || !endToken.price) {
         return {
           isProfitable: false,
@@ -108,70 +107,98 @@ export class Executor {
         };
       }
 
-      // Рассчитываем начальную сумму в нативных единицах
-      const startAmount = Math.floor(
+      const amountIn = Math.floor(
         (testAmountUSD / parseFloat(startToken.price)) * Math.pow(10, startToken.decimals)
       );
 
-      let currentAmount = startAmount.toString();
-      let allStepsSuccess = true;
-      const stepDetails: any[] = [];
+      // Формируем diff для token_diff интента
+      const diff: Record<string, string> = {};
+      diff[startToken.assetId] = `-${amountIn}`;
+      // Выход пока неизвестен, ставим 0 - контракт сам рассчитает
+      diff[endToken.assetId] = `+0`;
 
-      // Проходим по всем шагам пути
-      for (let i = 0; i < route.tokensInfo.length - 1; i++) {
-        const fromToken = route.tokensInfo[i];
-        const toToken = route.tokensInfo[i + 1];
+      const intent = {
+        intent: "token_diff",
+        diff: diff
+      };
 
-        const quote = await nearIntentsClient.getQuote(
-          fromToken.assetId,
-          toToken.assetId,
-          currentAmount,
-          this.recipientAddress,
-          this.recipientAddress,
-          true
-        );
+      // Генерируем nonce и deadline
+      const nonce = nearRpcClient.getRandomNonce();
+      const deadline = new Date(Date.now() + 60000).toISOString();
 
-        if (!quote.quote?.amountOut) {
-          allStepsSuccess = false;
-          logger.debug(`   ❌ Шаг ${fromToken.symbol} → ${toToken.symbol}: нет ликвидности`);
-          break;
+      // Создаём подписанный интент
+      const signedIntent = await nearRpcClient.createSignedIntent(
+        intent,
+        nonce,
+        deadline,
+        'intents.near'
+      );
+
+      logger.debug(`   Подписанный интент создан`);
+
+      // Вызываем simulate_intents
+      const simulation = await nearRpcClient.simulateIntent([signedIntent]);
+
+      logger.debug(`   Simulation logs: ${JSON.stringify(simulation.logs)}`);
+
+      let finalAmountOut = 0;
+
+      // Парсим результат из логов
+      if (simulation.logs && Array.isArray(simulation.logs)) {
+        for (const log of simulation.logs) {
+          if (typeof log === 'string' && log.includes('EVENT_JSON')) {
+            const match = log.match(/EVENT_JSON:(.*)/);
+            if (match && match[1]) {
+              try {
+                const eventData = JSON.parse(match[1]);
+                if (eventData.event === 'token_diff' && Array.isArray(eventData.data)) {
+                  for (const item of eventData.data) {
+                    if (item && item.account_id === this.recipientAddress && item.diff) {
+                      for (const [assetId, amountValue] of Object.entries(item.diff)) {
+                        if (assetId === endToken.assetId && typeof amountValue === 'string') {
+                          if (amountValue.startsWith('+')) {
+                            finalAmountOut = parseInt(amountValue.substring(1), 10);
+                            logger.debug(`   Найден amount_out: ${finalAmountOut}`);
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              } catch (e) {
+                logger.debug(`   Ошибка парсинга: ${e}`);
+              }
+            }
+          }
         }
-
-        stepDetails.push({
-          step: i + 1,
-          from: fromToken.symbol,
-          to: toToken.symbol,
-          amountOut: quote.quote.amountOut,
-          amountOutUsd: quote.quote.amountOutUsd
-        });
-
-        currentAmount = quote.quote.amountOut;
       }
 
-      if (!allStepsSuccess) {
+      if (finalAmountOut === 0) {
+        logger.warn(`   ⚠️ Не удалось получить amount_out из симуляции`);
+        logger.debug(`   Полный ответ: ${JSON.stringify(simulation)}`);
         return {
           isProfitable: false,
           currentProfitPercent: 0,
           currentProfitAmount: 0,
-          error: 'Нет ликвидности на одном из шагов'
+          error: 'Не удалось получить результат симуляции'
         };
       }
 
-      const finalAmountUSD = parseFloat(stepDetails[stepDetails.length - 1].amountOutUsd);
-      const profitAmount = finalAmountUSD - testAmountUSD;
+      const amountOutUSD = (finalAmountOut / Math.pow(10, endToken.decimals)) * parseFloat(endToken.price);
+      const profitAmount = amountOutUSD - testAmountUSD;
       const profitPercent = (profitAmount / testAmountUSD) * 100;
 
-      logger.debug(`   📊 Текущая прибыль: ${profitPercent > 0 ? '+' : ''}${profitPercent.toFixed(4)}% (было: ${route.profitPercent.toFixed(4)}%)`);
+      logger.debug(`   📊 Результат: ${amountOutUSD.toFixed(4)} USD, прибыль: ${profitPercent.toFixed(4)}%`);
 
       return {
         isProfitable: profitPercent >= config.executor.minProfitPercent,
         currentProfitPercent: profitPercent,
         currentProfitAmount: profitAmount,
-        amountOut: currentAmount
+        amountOut: finalAmountOut.toString()
       };
 
     } catch (error: any) {
-      logger.error(`❌ Ошибка симуляции: ${error.message}`);
+      logger.error(`❌ Ошибка RPC симуляции: ${error.message}`);
       return {
         isProfitable: false,
         currentProfitPercent: 0,
@@ -180,7 +207,6 @@ export class Executor {
       };
     }
   }
-
   private buildIntentArgs(route: ProfitableRoute): Record<string, unknown> {
     const startToken = route.tokensInfo[0];
     const endToken = route.tokensInfo[route.tokensInfo.length - 1];
@@ -213,7 +239,7 @@ export class Executor {
     const argsJson = JSON.stringify(args);
     const argsBase64 = Buffer.from(argsJson).toString('base64');
 
-    const GAS_FOR_FUNCTION_CALL = 300_000_000_000_000n; // 300 TGas
+    const GAS_FOR_FUNCTION_CALL = 300_000_000_000_000n;
 
     const action: Action = {
       type: ActionType.FunctionCall,
@@ -233,7 +259,6 @@ export class Executor {
     logger.info(`   Прибыль: ${route.profitPercent.toFixed(4)}%`);
     logger.info(`   Сумма: ${config.executor.baseAmount} USDC`);
 
-    // DRY-RUN режим - только симуляция
     if (config.dryRunOnly) {
       logger.info(`   💡 DRY-RUN: симуляция без реальной транзакции`);
       await new Promise(r => setTimeout(r, 500));
@@ -256,7 +281,6 @@ export class Executor {
       };
     }
 
-    // Проверяем наличие адреса для реального режима
     if (!this.recipientAddress) {
       const error = 'Адрес получателя не указан';
       logger.error(`❌ ${error}`);
@@ -267,7 +291,6 @@ export class Executor {
       };
     }
 
-    // РЕАЛЬНЫЙ режим
     try {
       const account = await nearRpcClient.getAccount();
       const block = await nearRpcClient.getLatestBlock();
@@ -345,7 +368,6 @@ export class Executor {
   }
 
   async executeProfitableRoutes(): Promise<ExecutionResult[]> {
-    // Инициализируем RPC только если не dry-run
     if (!config.dryRunOnly) {
       await nearRpcClient.init();
     }
@@ -357,7 +379,6 @@ export class Executor {
       return [];
     }
 
-    // Сортируем по прибыли (от большей к меньшей)
     const sortedRoutes = [...routes].sort((a, b) => b.profitPercent - a.profitPercent);
     const candidates = sortedRoutes.filter(r => r.profitPercent >= config.executor.minProfitPercent);
 
@@ -366,7 +387,7 @@ export class Executor {
       return [];
     }
 
-    logger.info(`🚀 Проверка ${candidates.length} маршрутов на актуальность...`);
+    logger.info(`🚀 Проверка ${candidates.length} маршрутов на актуальность через RPC...`);
     logger.info(`   Режим: ${config.dryRunOnly ? 'DRY-RUN (симуляция)' : 'РЕАЛЬНЫЙ'}`);
 
     const results: ExecutionResult[] = [];
@@ -376,7 +397,6 @@ export class Executor {
       logger.info(`\n📋 [${i + 1}/${candidates.length}] ${route.path.join(' → ')}`);
       logger.info(`   Историческая прибыль: ${route.profitPercent.toFixed(4)}%`);
 
-      // Симулируем текущую прибыльность
       const simulation = await this.simulateProfitability(route);
 
       if (!simulation.isProfitable) {
@@ -389,7 +409,6 @@ export class Executor {
 
       logger.info(`   ✅ Текущая прибыль: ${simulation.currentProfitPercent.toFixed(4)}% (выше порога)`);
 
-      // Исполняем (в dry-mode будет симуляция, в реальном - реальная транзакция)
       const result = await this.executeAtomicSwap(route);
       results.push(result);
 

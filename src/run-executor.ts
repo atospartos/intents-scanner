@@ -7,16 +7,15 @@ import path from 'path';
 
 async function main() {
   console.log('\n🚀 ЗАПУСК EXECUTOR (атомарные INTENTS свопы)\n');
-  console.log('=' .repeat(60));
+  console.log('='.repeat(60));
   console.log(`   RPC: ${config.near.nodeUrl}`);
   console.log(`   Аккаунт: ${config.near.accountId || 'не указан'}`);
   console.log(`   Контракт: intents.near`);
   console.log(`   Мин. прибыль: ${config.executor.minProfitPercent}%`);
   console.log(`   Базовая сумма: ${config.executor.baseAmount} USDC`);
   console.log(`   Режим: ${config.dryRunOnly ? 'DRY-RUN (симуляция)' : 'РЕАЛЬНЫЙ'}`);
-  console.log('=' .repeat(60));
+  console.log('='.repeat(60));
   
-  // Проверяем наличие файла в storage папке
   const storageDir = path.join(process.cwd(), 'storage');
   const profitableFile = path.join(storageDir, 'profitable.json');
   
@@ -36,9 +35,7 @@ async function main() {
   console.log(`   ✅ Найден файл: ${profitableFile}\n`);
   
   try {
-    // В DRY режиме не инициализируем RPC и не проверяем баланс
     if (!config.dryRunOnly) {
-      // Проверяем наличие приватного ключа
       if (!config.near.privateKey || config.near.privateKey === '') {
         console.error('\n❌ Ошибка: NEAR_PRIVATE_KEY не указан в .env');
         console.error('   Для реального исполнения добавьте приватный ключ');
@@ -54,7 +51,7 @@ async function main() {
     
     const results = await executor.executeProfitableRoutes();
     
-    console.log('\n' + '=' .repeat(60));
+    console.log('\n' + '='.repeat(60));
     console.log('📊 ФИНАЛЬНЫЕ РЕЗУЛЬТАТЫ:');
     console.log(`   ✅ Успешно: ${results.filter(r => r.success).length}`);
     console.log(`   ❌ Ошибок: ${results.filter(r => !r.success).length}`);

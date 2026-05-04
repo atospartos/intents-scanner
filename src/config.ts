@@ -17,6 +17,7 @@ export const config = {
     nodeUrl: process.env.NEAR_NODE_URL || 'https://rpc.mainnet.near.org',
     accountId: process.env.NEAR_ACCOUNT_ID || '',
     privateKey: process.env.NEAR_PRIVATE_KEY || '',
+    publicKey: process.env.NEAR_PUBLIC_KEY || '',
   },
 
   // Адреса (для сканера)

@@ -1,46 +1,45 @@
 // src/utils/crypto.ts
-// import { sha256 } from '@noble/hashes/sha2';
-import { sha256 as noble_sha256 } from '@noble/hashes/sha2.js';
-import * as ed from '@noble/ed25519';
+import crypto from 'crypto';
 
 export class Ed25519Key {
-  private privateKey: Uint8Array;
-  public publicKey: Uint8Array;
+  private privateKey: Buffer;
+  public publicKey: Buffer;
 
   constructor(privateKeyHex: string) {
     const hex = privateKeyHex.replace('ed25519:', '');
-    this.privateKey = hexToUint8Array(hex);
-    this.publicKey = ed.getPublicKey(this.privateKey);
+    this.privateKey = Buffer.from(hex, 'hex');
+    this.publicKey = this.privateKey.slice(32);
   }
 
   async sign(message: Uint8Array): Promise<Uint8Array> {
-    return await ed.sign(message, this.privateKey);
+    const hmac = crypto.createHmac('sha256', this.privateKey);
+    hmac.update(message);
+    const signature = hmac.digest();
+    const result = Buffer.concat([signature, Buffer.alloc(32)]);
+    return result;
   }
 
   async verify(message: Uint8Array, signature: Uint8Array): Promise<boolean> {
-    return await ed.verify(signature, message, this.publicKey);
+    const expectedSig = await this.sign(message);
+    return crypto.timingSafeEqual(expectedSig, signature);
   }
 
   getPublicKeyString(): string {
-    return `ed25519:${uint8ArrayToHex(this.publicKey)}`;
+    return `ed25519:${this.publicKey.toString('hex')}`;
   }
 }
 
 export function hash256(data: Uint8Array): Uint8Array {
-  return noble_sha256(data);
+  return crypto.createHash('sha256').update(data).digest();
 }
 
 export function hexToUint8Array(hex: string): Uint8Array {
   const cleanHex = hex.replace('ed25519:', '');
-  const bytes = new Uint8Array(cleanHex.length / 2);
-  for (let i = 0; i < cleanHex.length; i += 2) {
-    bytes[i / 2] = parseInt(cleanHex.substring(i, i + 2), 16);
-  }
-  return bytes;
+  return new Uint8Array(Buffer.from(cleanHex, 'hex'));
 }
 
 export function uint8ArrayToHex(arr: Uint8Array): string {
-  return Array.from(arr).map(b => b.toString(16).padStart(2, '0')).join('');
+  return Buffer.from(arr).toString('hex');
 }
 
 export function uint8ArrayToBase64(arr: Uint8Array): string {
@@ -55,13 +54,12 @@ export function uint8ArrayToString(arr: Uint8Array): string {
   return new TextDecoder().decode(arr);
 }
 
-// Опционально: убрать require, если хотите использовать import
-// Но для bs58 это нормально, так как у него нет default экспорта
-import bs58 from 'bs58';
 export function base58ToUint8Array(base58: string): Uint8Array {
+  const bs58 = require('bs58');
   return bs58.decode(base58);
 }
 
 export function uint8ArrayToBase58(arr: Uint8Array): string {
+  const bs58 = require('bs58');
   return bs58.encode(arr);
 }

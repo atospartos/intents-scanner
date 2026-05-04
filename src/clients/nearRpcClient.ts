@@ -2,18 +2,23 @@
 import axios from 'axios';
 import { config } from '../config';
 import { logger } from '../utils/logger';
-import { Ed25519Key, hash256, uint8ArrayToBase64, stringToUint8Array } from '../utils/crypto';
+import { 
+  Ed25519Key, 
+  hash256, 
+  uint8ArrayToBase64, 
+  stringToUint8Array,
+  uint8ArrayToHex  // ← ДОБАВЛЯЕМ ЭТОТ ИМПОРТ
+} from '../utils/crypto';
 import { 
   serializeTransaction, 
   serializeSignedTransaction, 
   hexToUint8Array,
   Transaction,
   SignedTransaction,
-  Action,
-  ActionType
+  Action
 } from '../utils/borsh';
+import crypto from 'crypto';
 
-// Типы ответов RPC
 export interface RpcResponse<T = any> {
   jsonrpc: string;
   id: string;
@@ -74,23 +79,25 @@ export class NearRpcClient {
     this.accountId = config.near.accountId;
   }
 
-  // Инициализация криптографии
   async init(): Promise<void> {
     if (this.initialized) return;
+    
+    if (!config.near.privateKey || config.near.privateKey === '') {
+      throw new Error('NEAR_PRIVATE_KEY не указан');
+    }
     
     this.key = new Ed25519Key(config.near.privateKey);
     this.initialized = true;
     logger.info(`🔐 Криптография инициализирована`);
   }
 
-  // Приватный метод для проверки инициализации
   private async ensureInit(): Promise<void> {
     if (!this.initialized) {
       await this.init();
     }
   }
 
-  private async rpcCall<T = any>(method: string, params: any): Promise<T> {
+  public async rpcCall<T = any>(method: string, params: any): Promise<T> {
     const response = await axios.post<RpcResponse<T>>(this.rpcUrl, {
       jsonrpc: '2.0',
       id: 'dontcare',
@@ -111,6 +118,55 @@ export class NearRpcClient {
 
     return response.data.result;
   }
+
+  // Добавляем метод для создания подписанного интента по NEP-413
+async createSignedIntent(
+  intent: any,
+  nonce: string,
+  deadline: string,
+  recipientId: string = 'intents.near'
+): Promise<any> {
+  await this.ensureInit();
+  
+  if (!this.key) {
+    throw new Error('Ключ не инициализирован');
+  }
+  
+  // Формируем сообщение по спецификации NEP-413
+  const message = {
+    signer_id: this.accountId,
+    deadline: deadline,
+    intents: [intent],
+    recipient_id: recipientId,
+    nonce: nonce
+  };
+  
+  const messageJson = JSON.stringify(message);
+  const messageHash = hash256(stringToUint8Array(messageJson));
+  
+  // Подписываем хеш сообщения
+  const signature = await this.key.sign(messageHash);
+  
+  // Формируем подписанный интент
+  return {
+    standard: "nep413",
+    payload: {
+      signer_id: this.accountId,
+      deadline: deadline,
+      intents: [intent],
+      recipient_id: recipientId,
+      nonce: nonce
+    },
+    public_key: this.key.getPublicKeyString(),
+    signature: `ed25519:${uint8ArrayToHex(signature)}`
+  };
+}
+
+// Получение случайного nonce
+getRandomNonce(): string {
+  const randomBytes = crypto.randomBytes(32);
+  return uint8ArrayToBase64(randomBytes);
+}
 
   async getAccount(): Promise<AccountInfo> {
     const result = await this.rpcCall<{
@@ -144,42 +200,76 @@ export class NearRpcClient {
     };
   }
 
+  // ===== ПОЛУЧЕНИЕ ТЕКУЩЕЙ СОЛИ =====
+  async getCurrentSalt(): Promise<string> {
+    const argsBase64 = Buffer.from(JSON.stringify({})).toString('base64');
+    
+    const result = await this.rpcCall<any>('query', {
+      request_type: 'call_function',
+      finality: 'final',
+      account_id: 'intents.near',
+      method_name: 'current_salt',
+      args_base64: argsBase64
+    });
+    
+    if (result.result && result.result.length > 0) {
+      return Buffer.from(result.result).toString();
+    }
+    return '';
+  }
+
+  // ===== СИМУЛЯЦИЯ ИНТЕНТА =====
+  async simulateIntent(signedIntents: any[]): Promise<any> {
+    const argsBase64 = Buffer.from(JSON.stringify({ signed: signedIntents })).toString('base64');
+    
+    const result = await this.rpcCall<any>('query', {
+      request_type: 'call_function',
+      finality: 'final',
+      account_id: 'intents.near',
+      method_name: 'simulate_intents',
+      args_base64: argsBase64
+    });
+    
+    if (result.result && result.result.length > 0) {
+      const responseText = Buffer.from(result.result).toString();
+      try {
+        return JSON.parse(responseText);
+      } catch {
+        return { raw: responseText, logs: result.logs || [] };
+      }
+    }
+    
+    return { logs: result.logs || [] };
+  }
+
   async createAndSignTransaction(
     receiverId: string,
     actions: Action[],
     nonce: number,
     blockHash: string
   ): Promise<string> {
-    // Убеждаемся, что криптография инициализирована
     await this.ensureInit();
     
     if (!this.key) {
       throw new Error('Ключ не инициализирован');
     }
     
-    // Формируем транзакцию согласно документации NEAR
     const transaction: Transaction = {
       signerId: this.accountId,
       publicKey: {
-        keyType: 0,  // ED25519
+        keyType: 0,
         data: this.key.publicKey
       },
-      nonce: BigInt(nonce + 1),  // nonce увеличивается на 1
+      nonce: BigInt(nonce + 1),
       receiverId: receiverId,
       blockHash: hexToUint8Array(blockHash),
       actions: actions
     };
 
-    // Сериализуем транзакцию
     const serializedTx = serializeTransaction(transaction);
-    
-    // Хешируем для подписи
     const hash = hash256(serializedTx);
-    
-    // Подписываем
     const signature = await this.key.sign(hash);
     
-    // Формируем подписанную транзакцию
     const signedTransaction: SignedTransaction = {
       transaction: transaction,
       signature: {
@@ -188,10 +278,7 @@ export class NearRpcClient {
       }
     };
     
-    // Сериализуем подписанную транзакцию
     const serializedSignedTx = serializeSignedTransaction(signedTransaction);
-    
-    // Конвертируем в base64 для отправки
     return uint8ArrayToBase64(serializedSignedTx);
   }
 
@@ -223,31 +310,6 @@ export class NearRpcClient {
     const balanceInNear = Number(balanceInYocto) / 1e24;
     return balanceInNear.toFixed(4);
   }
-// src/clients/nearRpcClient.ts - добавляем метод
-
-async viewFunction(params: {
-  contractId: string;
-  methodName: string;
-  args: any;
-}): Promise<any> {
-  const argsBase64 = Buffer.from(JSON.stringify(params.args)).toString('base64');
-  
-  const result = await this.rpcCall('query', {
-    request_type: 'call_function',
-    finality: 'final',
-    account_id: params.contractId,
-    method_name: params.methodName,
-    args_base64: argsBase64
-  });
-  
-  // Декодируем результат из base64
-  if (result.result && result.result.length > 0) {
-    return JSON.parse(Buffer.from(result.result[0]).toString());
-  }
-  
-  return result;
-}
-
 }
 
 export const nearRpcClient = new NearRpcClient();

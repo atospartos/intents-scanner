@@ -11,20 +11,18 @@
     "clean": "rm -rf dist logs storage",
     "executor": "ts-node src/run-executor.ts",
     "executor:dry": "DRY_RUN_ONLY=true ts-node src/run-executor.ts",
-    "test:api-format": "ts-node src/test-api-format.ts"
+    "scan": "ts-node src/index.ts"
   },
   "dependencies": {
-    "@noble/ed25519": "^3.1.0",
-    "@noble/hashes": "^2.2.0",
-    "axios": "^1.16.0",
-    "borsh": "^2.0.0",
-    "bs58": "^6.0.0",
-    "dotenv": "^16.6.1"
+    "axios": "^1.7.0",
+    "borsh": "^1.0.0",
+    "bs58": "^5.0.0",
+    "dotenv": "^16.4.0"
   },
   "devDependencies": {
-    "@types/node": "^20.19.39",
-    "nodemon": "^3.1.14",
-    "ts-node": "^10.9.2",
-    "typescript": "^5.9.3"
+    "@types/node": "^20.12.0",
+    "nodemon": "^3.1.0",
+    "ts-node": "^10.9.0",
+    "typescript": "^5.4.0"
   }
 }
