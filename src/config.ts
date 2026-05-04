@@ -15,7 +15,7 @@ export const config = {
   near: {
     networkId: process.env.NEAR_NETWORK_ID || 'mainnet',
     nodeUrl: process.env.NEAR_NODE_URL || 'https://rpc.mainnet.near.org',
-    accountId: process.env.NEAR_ACCOUNT_ID || '',
+    accountId: process.env.NEAR_ADDRESS || '',
     privateKey: process.env.NEAR_PRIVATE_KEY || '',
     publicKey: process.env.NEAR_PUBLIC_KEY || '',
   },

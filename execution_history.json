@@ -166,5 +166,33 @@
     "txHash": "dry-run-1777877945194",
     "executedAt": 1777877945194,
     "success": true
+  },
+  {
+    "routeId": "USDC_DASH_USDT_USDC",
+    "path": [
+      "USDC",
+      "DASH",
+      "USDT",
+      "USDC"
+    ],
+    "profitPercent": 0.035600000000002296,
+    "profitAmount": 0.035600000000002296,
+    "txHash": "dry-run-1777883703319",
+    "executedAt": 1777883703319,
+    "success": true
+  },
+  {
+    "routeId": "USDC_DASH_USDT0_USDC",
+    "path": [
+      "USDC",
+      "DASH",
+      "USDT0",
+      "USDC"
+    ],
+    "profitPercent": 0.028599999999997298,
+    "profitAmount": 0.028599999999997294,
+    "txHash": "dry-run-1777883715278",
+    "executedAt": 1777883715278,
+    "success": true
   }
 ]

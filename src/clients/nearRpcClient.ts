@@ -201,22 +201,21 @@ getRandomNonce(): string {
   }
 
   // ===== ПОЛУЧЕНИЕ ТЕКУЩЕЙ СОЛИ =====
-  async getCurrentSalt(): Promise<string> {
-    const argsBase64 = Buffer.from(JSON.stringify({})).toString('base64');
-    
-    const result = await this.rpcCall<any>('query', {
-      request_type: 'call_function',
-      finality: 'final',
-      account_id: 'intents.near',
-      method_name: 'current_salt',
-      args_base64: argsBase64
-    });
-    
-    if (result.result && result.result.length > 0) {
-      return Buffer.from(result.result).toString();
-    }
-    return '';
+async getCurrentSalt(): Promise<string> {
+  const argsBase64 = "e30="; // пустые аргументы в base64
+  const result = await this.rpcCall<any>('query', {
+    request_type: 'call_function',
+    finality: 'final',
+    account_id: 'intents.near',
+    method_name: 'current_salt',
+    args_base64: argsBase64
+  });
+  
+  if (result.result && result.result.length > 0) {
+    return Buffer.from(result.result).toString();
   }
+  return "";
+}
 
   // ===== СИМУЛЯЦИЯ ИНТЕНТА =====
   async simulateIntent(signedIntents: any[]): Promise<any> {
@@ -310,6 +309,8 @@ getRandomNonce(): string {
     const balanceInNear = Number(balanceInYocto) / 1e24;
     return balanceInNear.toFixed(4);
   }
+
+
 }
 
 export const nearRpcClient = new NearRpcClient();

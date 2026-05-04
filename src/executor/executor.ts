@@ -73,7 +73,7 @@ export class Executor {
   }
 
   // ===== РЕАЛЬНАЯ СИМУЛЯЦИЯ ПРИБЫЛЬНОСТИ ЧЕРЕЗ RPC =====
-  // src/executor/executor.ts - исправленный метод simulateProfitability
+  // src/executor/executor.ts - исправленный метод
 
   async simulateProfitability(route: ProfitableRoute): Promise<{
     isProfitable: boolean;
@@ -82,16 +82,7 @@ export class Executor {
     amountOut?: string;
     error?: string;
   }> {
-    logger.debug(`🔍 RPC симуляция с правильной подписью: ${route.path.join(' → ')}`);
-
-    if (!this.recipientAddress) {
-      return {
-        isProfitable: false,
-        currentProfitPercent: 0,
-        currentProfitAmount: 0,
-        error: 'Адрес получателя не указан'
-      };
-    }
+    logger.debug(`🔍 RPC симуляция: ${route.path.join(' → ')}`);
 
     try {
       const startToken = route.tokensInfo[0];
@@ -111,80 +102,104 @@ export class Executor {
         (testAmountUSD / parseFloat(startToken.price)) * Math.pow(10, startToken.decimals)
       );
 
-      // Формируем diff для token_diff интента
-      const diff: Record<string, string> = {};
-      diff[startToken.assetId] = `-${amountIn}`;
-      // Выход пока неизвестен, ставим 0 - контракт сам рассчитает
-      diff[endToken.assetId] = `+0`;
+      logger.debug(`   Start: ${startToken.symbol} amount: ${amountIn}`);
 
-      const intent = {
-        intent: "token_diff",
-        diff: diff
-      };
+      // Пробуем разные форматы аргументов
+      const argFormats = [
+        // Формат 1: path + amount_in
+        {
+          path: route.tokensInfo.map(t => t.assetId),
+          amount_in: amountIn.toString()
+        },
+        // Формат 2: from + to + amount
+        {
+          from: startToken.assetId,
+          to: endToken.assetId,
+          amount: amountIn.toString()
+        },
+        // Формат 3: token_in + token_out + amount_in
+        {
+          token_in: startToken.assetId,
+          token_out: endToken.assetId,
+          amount_in: amountIn.toString()
+        },
+        // Формат 4: с recipient
+        {
+          path: route.tokensInfo.map(t => t.assetId),
+          amount_in: amountIn.toString(),
+          recipient: config.near.accountId
+        }
+      ];
 
-      // Генерируем nonce и deadline
-      const nonce = nearRpcClient.getRandomNonce();
-      const deadline = new Date(Date.now() + 60000).toISOString();
+      const methodNames = ['get_swap_preview', 'swap_preview', 'preview_swap', 'quote'];
+      let success = false;
+      let amountOut = 0;
+      let lastError = '';
 
-      // Создаём подписанный интент
-      const signedIntent = await nearRpcClient.createSignedIntent(
-        intent,
-        nonce,
-        deadline,
-        'intents.near'
-      );
+      for (const method of methodNames) {
+        for (const args of argFormats) {
+          try {
+            const argsBase64 = Buffer.from(JSON.stringify(args)).toString('base64');
+            logger.debug(`   Пробуем ${method} с аргументами: ${JSON.stringify(args)}`);
 
-      logger.debug(`   Подписанный интент создан`);
+            const result = await nearRpcClient.rpcCall('query', {
+              request_type: 'call_function',
+              finality: 'final',
+              account_id: 'intents.near',
+              method_name: method,
+              args_base64: argsBase64
+            });
 
-      // Вызываем simulate_intents
-      const simulation = await nearRpcClient.simulateIntent([signedIntent]);
+            if (result.error) {
+              logger.debug(`     Ошибка: ${result.error}`);
+              lastError = result.error;
+              continue;
+            }
 
-      logger.debug(`   Simulation logs: ${JSON.stringify(simulation.logs)}`);
+            if (result.result && result.result.length > 0) {
+              const output = Buffer.from(result.result).toString();
+              logger.debug(`     Ответ: ${output.substring(0, 200)}`);
 
-      let finalAmountOut = 0;
-
-      // Парсим результат из логов
-      if (simulation.logs && Array.isArray(simulation.logs)) {
-        for (const log of simulation.logs) {
-          if (typeof log === 'string' && log.includes('EVENT_JSON')) {
-            const match = log.match(/EVENT_JSON:(.*)/);
-            if (match && match[1]) {
+              // Парсим ответ
               try {
-                const eventData = JSON.parse(match[1]);
-                if (eventData.event === 'token_diff' && Array.isArray(eventData.data)) {
-                  for (const item of eventData.data) {
-                    if (item && item.account_id === this.recipientAddress && item.diff) {
-                      for (const [assetId, amountValue] of Object.entries(item.diff)) {
-                        if (assetId === endToken.assetId && typeof amountValue === 'string') {
-                          if (amountValue.startsWith('+')) {
-                            finalAmountOut = parseInt(amountValue.substring(1), 10);
-                            logger.debug(`   Найден amount_out: ${finalAmountOut}`);
-                          }
-                        }
-                      }
-                    }
-                  }
+                const parsed = JSON.parse(output);
+                if (parsed.amount_out) {
+                  amountOut = parseInt(parsed.amount_out, 10);
+                  success = true;
+                  break;
+                } else if (parsed.amountOut) {
+                  amountOut = parseInt(parsed.amountOut, 10);
+                  success = true;
+                  break;
                 }
-              } catch (e) {
-                logger.debug(`   Ошибка парсинга: ${e}`);
+              } catch {
+                const match = output.match(/\d+/);
+                if (match) {
+                  amountOut = parseInt(match[0], 10);
+                  success = true;
+                  break;
+                }
               }
             }
+          } catch (e: any) {
+            logger.debug(`     Ошибка: ${e.message.substring(0, 100)}`);
+            lastError = e.message;
           }
         }
+        if (success) break;
       }
 
-      if (finalAmountOut === 0) {
-        logger.warn(`   ⚠️ Не удалось получить amount_out из симуляции`);
-        logger.debug(`   Полный ответ: ${JSON.stringify(simulation)}`);
+      if (!success || amountOut === 0) {
+        logger.warn(`   ⚠️ Не удалось получить результат: ${lastError}`);
         return {
           isProfitable: false,
           currentProfitPercent: 0,
           currentProfitAmount: 0,
-          error: 'Не удалось получить результат симуляции'
+          error: `Не удалось получить результат: ${lastError}`
         };
       }
 
-      const amountOutUSD = (finalAmountOut / Math.pow(10, endToken.decimals)) * parseFloat(endToken.price);
+      const amountOutUSD = (amountOut / Math.pow(10, endToken.decimals)) * parseFloat(endToken.price);
       const profitAmount = amountOutUSD - testAmountUSD;
       const profitPercent = (profitAmount / testAmountUSD) * 100;
 
@@ -194,7 +209,7 @@ export class Executor {
         isProfitable: profitPercent >= config.executor.minProfitPercent,
         currentProfitPercent: profitPercent,
         currentProfitAmount: profitAmount,
-        amountOut: finalAmountOut.toString()
+        amountOut: amountOut.toString()
       };
 
     } catch (error: any) {
