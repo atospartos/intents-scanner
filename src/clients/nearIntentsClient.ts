@@ -8,7 +8,7 @@ export interface Token {
   symbol: string;
   price: string;
   priceUpdatedAt: string;
-  contractAddress: string;
+  contractAddress?: string;
 }
 
 export interface QuoteResponse {
@@ -22,7 +22,9 @@ export interface QuoteResponse {
     minAmountOut: string;
     timeEstimate: number;
     depositAddress?: string;
+    transactionId?: string;
   };
+  error?: string;
 }
 
 export class NearIntentsClient {
@@ -31,7 +33,9 @@ export class NearIntentsClient {
   constructor() {
     this.client = axios.create({
       baseURL: config.api.baseUrl,
-      timeout: 30000, // Увеличиваем до 30 секунд
+      timeout: config.api.timeout,
+      maxContentLength: Infinity,
+      maxBodyLength: Infinity,
       headers: {
         'Authorization': `Bearer ${config.api.jwtToken}`,
         'Content-Type': 'application/json',
@@ -44,33 +48,47 @@ export class NearIntentsClient {
     return response.data;
   }
 
-  async getQuote(
-    fromAsset: string,
-    toAsset: string,
-    amountIn: string,
-    recipient: string,
-    refundTo: string,
-    dry: boolean = true
-  ): Promise<QuoteResponse> {
-    const deadline = new Date(Date.now() + 60 * 1000).toISOString();
-    
+  async getQuote(params: {
+    originAsset: string;
+    destinationAsset: string;
+    amount: string;
+    depositType: 'INTENTS' | 'ORIGIN_CHAIN' | 'DESTINATION_CHAIN';
+    recipientType: 'INTENTS' | 'ORIGIN_CHAIN' | 'DESTINATION_CHAIN';
+    recipient: string;
+    refundTo: string;
+    dry: boolean;
+    slippageTolerance?: number;
+    swapType?: 'EXACT_INPUT' | 'EXACT_OUTPUT';
+    deadline?: string;
+    quoteWaitingTimeMs?: number;
+  }): Promise<QuoteResponse> {
+    const defaultDeadline = new Date(Date.now() + 60 * 1000).toISOString();
+
+    // Согласно документации, refundType должен соответствовать depositType:
+    // INTENTS -> INTENTS, ORIGIN_CHAIN -> ORIGIN_CHAIN, DESTINATION_CHAIN не используется для refund.
+    const refundType = params.depositType === 'INTENTS' ? 'INTENTS' : 'ORIGIN_CHAIN';
+
     const request = {
-      dry: dry,
-      swapType: 'EXACT_INPUT',
-      slippageTolerance: config.trading.slippageToleranceBps,
-      originAsset: fromAsset,
-      depositType: 'INTENTS',
-      destinationAsset: toAsset,
-      amount: amountIn,
-      refundTo: refundTo,
-      refundType: 'INTENTS',
-      recipient: recipient,
-      recipientType: 'INTENTS',
-      deadline: deadline,
-      quoteWaitingTimeMs: 5000,
+      dry: params.dry,
+      swapType: params.swapType || 'EXACT_INPUT',
+      slippageTolerance: params.slippageTolerance ?? config.trading.slippageToleranceBps,
+      originAsset: params.originAsset,
+      depositType: params.depositType,
+      destinationAsset: params.destinationAsset,
+      amount: params.amount,
+      refundTo: params.refundTo,
+      refundType,
+      recipient: params.recipient,
+      recipientType: params.recipientType,
+      deadline: params.deadline || defaultDeadline,
+      quoteWaitingTimeMs: params.quoteWaitingTimeMs || 5000,
     };
-    
     const response = await this.client.post('/v0/quote', request);
+    return response.data;
+  }
+
+  async getStatus(transactionId: string): Promise<{ status: string }> {
+    const response = await this.client.get(`/v0/status/${transactionId}`);
     return response.data;
   }
 }
