@@ -1,8 +1,10 @@
+import fs from 'fs';
+import path from 'path';
 import { Token } from '../clients/nearIntentsClient';
 
 export interface ArbitragePath {
   id: string;
-  tokens: Token[];          // [stable, tokenA, tokenB, stable]
+  tokens: Token[];
   steps: Array<{
     from: Token;
     to: Token;
@@ -12,36 +14,55 @@ export interface ArbitragePath {
 }
 
 export class PathGenerator {
-  generatePaths(stable: Token, workingTokens: Token[]): ArbitragePath[] {
+  generateAllPaths(stable: Token, workingTokens: Token[]): ArbitragePath[] {
     const paths: ArbitragePath[] = [];
-    for (const tokenA of workingTokens) {
-      for (const tokenB of workingTokens) {
-        if (tokenA.assetId === tokenB.assetId) continue;
-        const tokens = [stable, tokenA, tokenB, stable];
+    for (const dest of workingTokens) {
+      for (const orig of workingTokens) {
+        if (dest.assetId === orig.assetId) continue;
+        const tokens = [stable, dest, orig, stable];
         const steps = [
           {
-            from: stable, to: tokenA,
+            from: stable, to: dest,
             depositType: 'INTENTS' as const,
             recipientType: 'DESTINATION_CHAIN' as const,
           },
           {
-            from: tokenA, to: tokenB,
+            from: dest, to: orig,
             depositType: 'ORIGIN_CHAIN' as const,
             recipientType: 'DESTINATION_CHAIN' as const,
           },
           {
-            from: tokenB, to: stable,
+            from: orig, to: stable,
             depositType: 'ORIGIN_CHAIN' as const,
             recipientType: 'INTENTS' as const,
           },
         ];
-        const id = `${stable.symbol}(${stable.blockchain})→${tokenA.symbol}(${tokenA.blockchain})→${tokenB.symbol}(${tokenB.blockchain})→${stable.symbol}(${stable.blockchain})`;
+        const id = `${stable.symbol}→${dest.symbol}(${dest.blockchain})→${orig.symbol}(${orig.blockchain})→${stable.symbol}`;
         paths.push({ id, tokens, steps });
       }
     }
-    console.log(`📈 Сгенерировано ${paths.length} маршрутов`);
+    console.log(`📈 Сгенерировано маршрутов: ${paths.length}`);
     return paths;
+  }
+
+  // Сохранить маршруты в файл (для отладки и возобновления)
+  savePathsToFile(paths: ArbitragePath[], filename: string = 'generated_routes.json'): void {
+    const dir = path.join(process.cwd(), 'storage');
+    if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+    const filePath = path.join(dir, filename);
+    const serialized = paths.map(p => ({
+      id: p.id,
+      tokens: p.tokens.map(t => ({ symbol: t.symbol, assetId: t.assetId, blockchain: t.blockchain, decimals: t.decimals })),
+      steps: p.steps.map(s => ({
+        fromSymbol: s.from.symbol,
+        toSymbol: s.to.symbol,
+        depositType: s.depositType,
+        recipientType: s.recipientType,
+      })),
+    }));
+    fs.writeFileSync(filePath, JSON.stringify(serialized, null, 2));
+    console.log(`💾 Маршруты сохранены в ${filePath}`);
   }
 }
 
-export const pathGenerator = new PathGenerator();
+export const pathGenerator = new PathGenerator;

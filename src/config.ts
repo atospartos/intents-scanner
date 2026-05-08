@@ -25,7 +25,7 @@ export const config = {
   scan: {
     intervalSec: parseInt(process.env.SCAN_INTERVAL_SEC || '5'),
     minProfitPercent: parseFloat(process.env.MIN_PROFIT_PERCENT || '0.01'),   // 0.1%
-    maxWorkingTokens: parseInt(process.env.MAX_WORKING_TOKENS || '100'),
+    maxWorkingTokens: parseInt(process.env.MAX_WORKING_TOKENS || '200'),
   },
 
   dryRunOnly: process.env.DRY_RUN_ONLY === 'true',  // для сканера всегда true
