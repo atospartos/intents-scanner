@@ -7,8 +7,8 @@ export interface Token {
   blockchain: string;
   symbol: string;
   price: string;
-  priceUpdatedAt: string;
-  contractAddress: string;
+  priceUpdatedAt?: string;
+  contractAddress?: string;
 }
 
 export interface QuoteResponse {
@@ -19,9 +19,9 @@ export interface QuoteResponse {
     amountOut: string;
     amountOutFormatted: string;
     amountOutUsd: string;
-    minAmountOut: string;
-    timeEstimate: number;
+    minAmountOut?: string;
     depositAddress?: string;
+    timeEstimate?: number;
   };
 }
 
@@ -31,9 +31,9 @@ export class NearIntentsClient {
   constructor() {
     this.client = axios.create({
       baseURL: config.api.baseUrl,
-      timeout: 30000, // Увеличиваем до 30 секунд
+      timeout: config.api.timeout,
       headers: {
-        'Authorization': `Bearer ${config.api.jwtToken}`,
+        Authorization: `Bearer ${config.api.jwtToken}`,
         'Content-Type': 'application/json',
       },
     });
@@ -44,33 +44,42 @@ export class NearIntentsClient {
     return response.data;
   }
 
+  /**
+   * Получение котировки
+   * @param dry true – симуляция, false – реальное создание intent
+   */
   async getQuote(
     fromAsset: string,
     toAsset: string,
     amountIn: string,
-    recipient: string,
-    refundTo: string,
-    dry: boolean = true
+    dry: boolean = true,
+    minAmountOut?: string,
+    recipient?: string,
+    refundTo?: string
   ): Promise<QuoteResponse> {
-    const deadline = new Date(Date.now() + 60 * 1000).toISOString();
-    
-    const request = {
-      dry: dry,
+    const deadline = new Date(Date.now() + 2 * 60 * 1000).toISOString();
+
+    const requestBody: any = {
+      dry,
       swapType: 'EXACT_INPUT',
-      slippageTolerance: config.trading.slippageToleranceBps,
+      slippageTolerance: config.executor.slippageToleranceBps,
       originAsset: fromAsset,
       depositType: 'INTENTS',
       destinationAsset: toAsset,
       amount: amountIn,
-      refundTo: refundTo,
-      refundType: 'INTENTS',
-      recipient: recipient,
-      recipientType: 'INTENTS',
-      deadline: deadline,
-      quoteWaitingTimeMs: 5000,
+      deadline,
     };
-    
-    const response = await this.client.post('/v0/quote', request);
+
+    if (!dry) {
+      // для реального запроса обязательны recipient, refundTo и minAmountOut
+      requestBody.recipient = recipient || config.addresses.near;
+      requestBody.recipientType = 'INTENTS';
+      requestBody.refundTo = refundTo || config.addresses.near;
+      requestBody.refundType = 'INTENTS';
+      if (minAmountOut) requestBody.minAmountOut = minAmountOut;
+    }
+
+    const response = await this.client.post('/v0/quote', requestBody);
     return response.data;
   }
 }
