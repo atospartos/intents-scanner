@@ -1,28 +1,48 @@
 import { tokenManager } from './services/tokenManager';
-import { pathGenerator } from './services/pathGenerator';
-import { parallelScanner } from './services/parallelScanner';
+import { RateCache } from './services/rateCache';
+import { FastScanner } from './services/fastScanner';
 import { config } from './config';
 
 async function main() {
-  console.log('🔍 Арбитражный сканер (все пары, проверка ликвидности на лету)');
-  const stable = await tokenManager.getStableToken();
-  const workingTokens = await tokenManager.getAllWorkingTokens();
-  console.log(`🔹 Стартовый стейбл: ${stable.symbol} (${stable.blockchain})`);
-  console.log(`🔹 Рабочих токенов: ${workingTokens.length}`);
+  console.log('🚀 Адаптивный сканер циклов (со стейблами и без)');
 
-  const paths = pathGenerator.generateAllPaths(stable, workingTokens);
-  // Сохраняем сгенерированные маршруты в файл перед сканированием
-  pathGenerator.savePathsToFile(paths, `routes_${Date.now()}.json`);
-  console.log(`📊 Всего маршрутов для проверки: ${paths.length}`);
+  const stables = await tokenManager.getAllStablecoins();
+  const rawWorking = await tokenManager.getWorkingTokens();
 
-  const results = await parallelScanner.scanPaths(paths, config.trading.testAmountUSD);
-  const profitable = results.filter(r => r.profitPercent >= config.scan.minProfitPercent);
-  console.log(`\n🏆 Прибыльных маршрутов: ${profitable.length}`);
-  if (profitable.length) {
-    profitable.sort((a, b) => b.profitPercent - a.profitPercent);
+  // Получаем токены с хотя бы одной связью со стейблом
+  const liquidTokensInfo = await tokenManager.getTokensWithAnyLiquidity(
+    rawWorking,
+    stables,
+    config.trading.testAmountUSD
+  );
+  const workingTokens = liquidTokensInfo.map(info => info.token);
+  console.log(`🔹 Токенов, пригодных для построения графа: ${workingTokens.length}`);
+
+  if (workingTokens.length === 0) {
+    console.log('❌ Нет токенов с ликвидностью');
+    return;
+  }
+
+  // Строим кэш для всех токенов (стейблы + рабочие)
+  const allTokensForCache = [...stables, ...workingTokens];
+  const rateCache = new RateCache();
+  await rateCache.ensureFresh(allTokensForCache, config.trading.testAmountUSD);
+
+  const scanner = new FastScanner(rateCache, config.trading.testAmountUSD);
+  const cycles = await scanner.findProfitableCycles(
+    allTokensForCache,
+    config.scan.minProfitPercent,
+    config.scan.maxCycleLength,
+    config.scan.enableStableCycles,
+    config.scan.enableAltcoinCycles
+  );
+
+  console.log(`\n🏆 Найдено прибыльных циклов: ${cycles.length}`);
+  if (cycles.length) {
+    cycles.sort((a, b) => b.profitPercent - a.profitPercent);
     console.log('Топ-5:');
-    profitable.slice(0, 5).forEach(p => {
-      console.log(`   ${p.pathStr} → +${p.profitPercent.toFixed(4)}%`);
+    cycles.slice(0, 5).forEach(c => {
+      console.log(`   ${c.path.join(' → ')} → +${c.profitPercent.toFixed(4)}%`);
     });
   }
 }

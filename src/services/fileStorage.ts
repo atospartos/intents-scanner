@@ -8,6 +8,14 @@ export interface StoredTokenInfo {
   decimals: number;
 }
 
+export interface CycleResult {
+  id: string;
+  path: string[];
+  profitPercent: number;
+  timestamp: number;
+  steps: number;
+}
+
 export interface ScannedRoute {
   id: string;
   pathStr: string;
@@ -26,6 +34,7 @@ export class FileStorage {
   private storageDir: string;
   private profitablePath: string;
   private nonProfitablePath: string;
+  private cyclesPath: string;
 
   constructor() {
     this.storageDir = path.join(process.cwd(), 'storage');
@@ -40,6 +49,8 @@ export class FileStorage {
     if (!fs.existsSync(this.nonProfitablePath)) {
       fs.writeFileSync(this.nonProfitablePath, JSON.stringify([], null, 2));
     }
+    this.cyclesPath = path.join(this.storageDir, 'profitable_cycles.json');
+    if (!fs.existsSync(this.cyclesPath)) fs.writeFileSync(this.cyclesPath, JSON.stringify([]));
   }
 
   saveProfitableRoute(route: ScannedRoute): void {
@@ -50,7 +61,11 @@ export class FileStorage {
     this.appendToFile(this.nonProfitablePath, route);
   }
 
-  private appendToFile(filePath: string, route: ScannedRoute): void {
+  saveCycle(cycle: CycleResult) {
+    this.appendToFile(this.cyclesPath, cycle);
+  }
+
+  private appendToFile(filePath: string, route): void {
     try {
       let existing: ScannedRoute[] = [];
       if (fs.existsSync(filePath)) {

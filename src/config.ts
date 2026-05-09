@@ -23,9 +23,16 @@ export const config = {
   },
 
   scan: {
+    minLiquidityRatio: 0.99,          // выход должен быть ≥99% от входа
+    minProfitPercent: 0.001,           // минимальная прибыль 0.01%
+    maxWorkingTokens: 100,
+    maxCycleLength: 5,                // макс. шагов в цикле (3,4,5)
+    enableStableCycles: true,         // искать циклы со стейблами
+    enableAltcoinCycles: true,        // искать циклы только между альткоинами
+    rateCacheTTL: 60000,              // 60 секунд
     intervalSec: parseInt(process.env.SCAN_INTERVAL_SEC || '5'),
-    minProfitPercent: parseFloat(process.env.MIN_PROFIT_PERCENT || '0.01'),   // 0.1%
-    maxWorkingTokens: parseInt(process.env.MAX_WORKING_TOKENS || '200'),
+    // minProfitPercent: parseFloat(process.env.MIN_PROFIT_PERCENT || '0.001'),   // 0.1%
+    // maxWorkingTokens: parseInt(process.env.MAX_WORKING_TOKENS || '200'),
   },
 
   dryRunOnly: process.env.DRY_RUN_ONLY === 'true',  // для сканера всегда true
@@ -41,6 +48,7 @@ export const config = {
     maxPrice: 100000,
   },
 
+  stableSymbols: ['USDC', 'USDT', 'DAI'],
   allowedBlockchains: ['near', 'eth', 'arb', 'base', 'bsc', 'avax', 'pol', 'op'],
 };
 
