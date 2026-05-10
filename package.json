@@ -4,6 +4,7 @@
   "description": "High-speed arbitrage bot for NEAR Intents API",
   "main": "dist/index.js",
   "scripts": {
+    "preinstall": "npx npm-force-resolutions",
     "build": "tsc",
     "start": "node dist/index.js",
     "dev": "ts-node src/index.ts",
@@ -15,15 +16,28 @@
     "debug:contract": "ts-node src/debug-contract.ts"
   },
   "dependencies": {
+    "@defuse-protocol/intents-sdk": "^0.62.2",
+    "@defuse-protocol/internal-utils": "^0.31.1",
+    "@defuse-protocol/one-click-sdk-typescript": "^0.1.17",
+    "@scure/base": "^2.2.0",
     "axios": "^1.7.0",
-    "borsh": "^1.0.0",
-    "bs58": "^5.0.0",
-    "dotenv": "^16.4.0"
+    "dotenv": "^16.4.0",
+    "near-api-js": "^7.2.0",
+    "viem": "^2.48.11"
   },
   "devDependencies": {
     "@types/node": "^20.12.0",
     "nodemon": "^3.1.0",
+    "npm-force-resolutions": "^0.0.10",
     "ts-node": "^10.9.0",
     "typescript": "^5.4.0"
+  },
+  "resolutions": {
+    "elliptic": "6.6.1",
+    "protobufjs": "7.5.5"
+  },
+  "overrides": {
+    "elliptic": "6.6.1",
+    "protobufjs": "7.5.5"
   }
 }
