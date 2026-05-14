@@ -47,10 +47,10 @@ export class RateCache {
             originAsset: from.assetId,
             destinationAsset: to.assetId,
             amount: amountIn,
-            depositType: from.blockchain === 'near' ? 'INTENTS' : 'ORIGIN_CHAIN',
-            recipientType: to.blockchain === 'near' ? 'INTENTS' : 'DESTINATION_CHAIN',
-            recipient: this.getAddress(to.blockchain),
-            refundTo: this.getAddress(from.blockchain),
+            depositType: 'INTENTS',
+            recipientType: 'INTENTS',
+            recipient: this.getAddress(),
+            refundTo: this.getAddress(),
             dry: true,
           });
           if (quote.quote?.amountOutUsd) {
@@ -82,10 +82,7 @@ export class RateCache {
     return Math.floor((usd / price) * 10 ** decimals).toString();
   }
 
-  private getAddress(blockchain: string): string {
-    if (blockchain === 'near') return config.addresses.near;
-    if (['eth', 'arb', 'base', 'bsc', 'avax', 'pol', 'op'].includes(blockchain)) return config.addresses.evm;
-    if (blockchain === 'sol') return config.addresses.sol;
+  private getAddress(): string {
     return config.addresses.near;
   }
 

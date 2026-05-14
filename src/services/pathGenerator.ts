@@ -8,8 +8,8 @@ export interface ArbitragePath {
   steps: Array<{
     from: Token;
     to: Token;
-    depositType: 'INTENTS' | 'ORIGIN_CHAIN' | 'DESTINATION_CHAIN';
-    recipientType: 'INTENTS' | 'ORIGIN_CHAIN' | 'DESTINATION_CHAIN';
+    depositType: 'INTENTS';
+    recipientType: 'INTENTS';
   }>;
 }
 
@@ -24,16 +24,6 @@ export class PathGenerator {
           {
             from: stable, to: dest,
             depositType: 'INTENTS' as const,
-            recipientType: 'DESTINATION_CHAIN' as const,
-          },
-          {
-            from: dest, to: orig,
-            depositType: 'ORIGIN_CHAIN' as const,
-            recipientType: 'DESTINATION_CHAIN' as const,
-          },
-          {
-            from: orig, to: stable,
-            depositType: 'ORIGIN_CHAIN' as const,
             recipientType: 'INTENTS' as const,
           },
         ];

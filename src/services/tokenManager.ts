@@ -36,7 +36,7 @@ export class TokenManager {
 
   async getAllStablecoins(): Promise<Token[]> {
     const all = await this.getAllTokens();
-    const symbols = config.stableSymbols || ['USDC', 'USDT', 'DAI', 'USDC.e', 'USDt'];
+    const symbols = config.stableSymbols;
     const stables = all.filter(t =>
       symbols.includes(t.symbol) &&
       config.allowedBlockchains.includes(t.blockchain) &&
@@ -66,9 +66,6 @@ export class TokenManager {
   }
 
   private getAddress(blockchain: string): string {
-    if (blockchain === 'near') return config.addresses.near;
-    if (['eth', 'arb', 'base', 'bsc', 'avax', 'pol', 'op'].includes(blockchain)) return config.addresses.evm;
-    if (blockchain === 'sol') return config.addresses.sol;
     return config.addresses.near;
   }
 
@@ -112,8 +109,8 @@ export class TokenManager {
               originAsset: job.stable.assetId,
               destinationAsset: job.token.assetId,
               amount: amountIn,
-              depositType: job.stable.blockchain === 'near' ? 'INTENTS' : 'ORIGIN_CHAIN',
-              recipientType: 'DESTINATION_CHAIN',
+              depositType: 'INTENTS',
+              recipientType: 'INTENTS',
               recipient: this.getAddress(job.token.blockchain),
               refundTo: this.getAddress(job.stable.blockchain),
               dry: true,
@@ -137,7 +134,7 @@ export class TokenManager {
               originAsset: job.token.assetId,
               destinationAsset: job.stable.assetId,
               amount: amountIn,
-              depositType: job.token.blockchain === 'near' ? 'INTENTS' : 'ORIGIN_CHAIN',
+              depositType: 'INTENTS',
               recipientType: 'INTENTS',
               recipient: config.addresses.near,
               refundTo: this.getAddress(job.token.blockchain),

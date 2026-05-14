@@ -17,13 +17,11 @@ export const config = {
   },
 
   addresses: {
-    near: process.env.NEAR_RECIPIENT_ADDRESS || 'partos.near',      // для INTENTS
-    evm: process.env.EVM_RECIPIENT_ADDRESS || '0xCE65672051c80e100FbF1571dC7FF8353F0CF633',        // 0x... для EVM-сетей (Ethereum, Arbitrum, Base и т.д.)
-    sol: process.env.SOL_RECIPIENT_ADDRESS || '',        // опционально
+    near: process.env.NEAR_ACCOUNT_ID || 'b817fd571bfb3272bafc2961f92c947d7ed63a4f23758ee23d00d60190440b4b',      // для INTENTS
   },
 
   scan: {
-    minLiquidityRatio: 0.99,          // выход должен быть ≥99% от входа
+    minLiquidityRatio: 0.95,          // выход должен быть ≥99% от входа
     minProfitPercent: 0.001,           // минимальная прибыль 0.01%
     maxWorkingTokens: 100,
     maxCycleLength: 5,                // макс. шагов в цикле (3,4,5)
@@ -31,8 +29,6 @@ export const config = {
     enableAltcoinCycles: true,        // искать циклы только между альткоинами
     rateCacheTTL: 60000,              // 60 секунд
     intervalSec: parseInt(process.env.SCAN_INTERVAL_SEC || '5'),
-    // minProfitPercent: parseFloat(process.env.MIN_PROFIT_PERCENT || '0.001'),   // 0.1%
-    // maxWorkingTokens: parseInt(process.env.MAX_WORKING_TOKENS || '200'),
   },
 
   dryRunOnly: process.env.DRY_RUN_ONLY === 'true',  // для сканера всегда true
@@ -43,12 +39,12 @@ export const config = {
   },
 
   filters: {
-    excludeSymbols: ['USDC'],
+    excludeSymbols: [],
     minPrice: 0.001,
     maxPrice: 100000,
   },
 
-  stableSymbols: ['USDC', 'USDT', 'DAI'],
+  stableSymbols: ['USDC'],
   allowedBlockchains: ['near', 'eth', 'arb', 'base', 'bsc', 'avax', 'pol', 'op'],
 };
 

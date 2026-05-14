@@ -52,8 +52,8 @@ export class NearIntentsClient {
     originAsset: string;
     destinationAsset: string;
     amount: string;
-    depositType: 'INTENTS' | 'ORIGIN_CHAIN' | 'DESTINATION_CHAIN';
-    recipientType: 'INTENTS' | 'ORIGIN_CHAIN' | 'DESTINATION_CHAIN';
+    depositType: 'INTENTS';
+    recipientType: 'INTENTS';
     recipient: string;
     refundTo: string;
     dry: boolean;
@@ -66,7 +66,7 @@ export class NearIntentsClient {
 
     // Согласно документации, refundType должен соответствовать depositType:
     // INTENTS -> INTENTS, ORIGIN_CHAIN -> ORIGIN_CHAIN, DESTINATION_CHAIN не используется для refund.
-    const refundType = params.depositType === 'INTENTS' ? 'INTENTS' : 'ORIGIN_CHAIN';
+    const refundType = params.depositType === 'INTENTS';
 
     const request = {
       dry: params.dry,

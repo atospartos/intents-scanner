@@ -252,9 +252,6 @@ export class ParallelScanner {
   }
 
   private getAddressForBlockchain(blockchain: string): string {
-    if (blockchain === 'near') return config.addresses.near;
-    if (['eth', 'arb', 'base', 'bsc', 'avax', 'pol', 'op'].includes(blockchain)) return config.addresses.evm;
-    if (blockchain === 'sol') return config.addresses.sol;
     return config.addresses.near;
   }
 
