@@ -1,3 +1,4 @@
+// src/intents/utils/near-config.ts
 import 'dotenv/config';
 import {
   createIntentSignerNEP413,
@@ -81,11 +82,11 @@ export const getNearWalletFromKeyPair = async (
  * needed by all SDK operations.
  */
 export const getNearIntentsSigner = async (): Promise<NearSignerContext> => {
-  if (!process.env.INTENTS_SDK_PRIVATE_KEY_NEAR) {
-    throw new Error('INTENTS_SDK_PRIVATE_KEY_NEAR is not set');
+  if (!process.env.PRIVATE_KEY_NEAR) {
+    throw new Error('PRIVATE_KEY_NEAR is not set');
   }
   const account = await getNearWalletFromKeyPair(
-    process.env.INTENTS_SDK_PRIVATE_KEY_NEAR as string,
+    process.env.PRIVATE_KEY_NEAR as string,
   );
 
   // Create a NEP-413 intent signer — the SDK calls this whenever it needs a signature

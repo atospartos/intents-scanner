@@ -1,3 +1,5 @@
+// src/intents/swap-tokens-near.ts
+
 import {
   authIdentity,
   AuthMethod,
@@ -8,15 +10,19 @@ import {
   OneClickService,
   QuoteRequest,
   QuoteResponse,
+  OpenAPI
 } from '@defuse-protocol/one-click-sdk-typescript';
 import { base64 } from '@scure/base';
 import { Account } from 'near-api-js';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath } from 'url';
 import { parseUnits } from 'viem';
-import { getTokenById, Token } from './get-tokens-list';
+// import { getTokenById, Token } from './get-tokens-list';
 import { intentsSdk } from './utils/config';
 import { getNearIntentsSigner } from './utils/near-config';
+import { Token, nearIntentsClient } from '../clients/nearIntentsClient';
 
+OpenAPI.BASE = 'https://1click.chaindefuser.com';
+OpenAPI.TOKEN = process.env.JWT_TOKEN;
 /**
  * Request a swap quote from the 1-Click API.
  * All addresses are set to INTENTS — tokens move within the intents ledger, not on external chains.
@@ -29,7 +35,9 @@ export const getSwapQuote = async ({
   originAsset: Token;
   destinationAsset: Token;
   amountIn: string;
-}) => {
+}): Promise<QuoteResponse> => {
+
+
   const { authIdentifier } = await getNearIntentsSigner();
 
   // Set a generous deadline for the quote (20 minutes)
@@ -52,6 +60,8 @@ export const getSwapQuote = async ({
   });
   return quoteResponse;
 };
+
+
 
 export const submitSwap = async ({
   quote,
@@ -142,70 +152,3 @@ export const submitSwap = async ({
     throw error;
   }
 };
-
-// ── Configuration ──────────────────────────────────────────────────────────────
-const fromTokenId =
-  'nep141:17208628f84f5d6ad33f0da3bbbeb27ffcb398eac501a31bd6ad2011e36133a1';
-const toTokenId = 'nep141:eth-0xdac17f958d2ee523a2206206994597c13d831ec7.omft.near';
-const amount = '0.5'; // Human-readable amount of the source token
-const quoteOnly = false; // Set to true to preview quote without executing
-
-async function main() {
-  console.log('Requesting swap quote...');
-  console.log(`From: ${fromTokenId}`);
-  console.log(`To: ${toTokenId}`);
-  console.log(`Amount in: ${amount}`);
-
-  // Look up both tokens from the registry
-  const fromToken = await getTokenById({
-    intents_token_id: fromTokenId,
-  });
-  if (!fromToken) {
-    throw new Error('Token not found');
-  }
-  const toToken = await getTokenById({
-    intents_token_id: toTokenId,
-  });
-  if (!toToken) {
-    throw new Error('Token not found');
-  }
-
-  // Convert human-readable amount to smallest unit using source token's decimals
-  const amountIn = parseUnits(amount, fromToken.decimals).toString();
-
-  // Request a swap quote — solvers return pricing in real time
-  const quote = await getSwapQuote({
-    originAsset: fromToken,
-    destinationAsset: toToken,
-    amountIn,
-  });
-  console.log('\nQuote received:');
-  console.dir(quote.quote, { depth: null });
-
-  if (quoteOnly) {
-    console.log('\nQuote-only mode enabled. Skipping swap submission.');
-    return;
-  }
-
-  // Get the NEAR wallet client and signer context
-  const { walletClient, authIdentifier, authMethod } =
-    await getNearIntentsSigner();
-
-  // Execute the swap: sign → publish → wait for settlement
-  const intentTx = await submitSwap({
-    quote,
-    account: walletClient.account,
-    authIdentifier,
-    authMethod,
-  });
-  console.log('\nSwap submitted. Settlement result:');
-  console.log(JSON.stringify(intentTx, null, 2));
-}
-
-// Only run when executed directly
-if (process.argv[1] === fileURLToPath(import.meta.url)) {
-  main().catch((error) => {
-    console.error(error);
-    process.exit(1);
-  });
-}

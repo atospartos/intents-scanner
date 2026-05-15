@@ -1,13 +1,6 @@
 import fs from 'fs';
 import path from 'path';
 
-export interface StoredTokenInfo {
-  symbol: string;
-  assetId: string;
-  blockchain: string;
-  decimals: number;
-}
-
 export interface CycleResult {
   id: string;
   path: string[];
@@ -19,21 +12,18 @@ export interface CycleResult {
 export interface ScannedRoute {
   id: string;
   pathStr: string;
-  steps: string[];
   profitPercent: number;
-  profitAmount: number;
   testAmountUSD: number;
-  timestamp: number;
-  usdIn: number;
-  usdOut: number;
-  tokensInfo: StoredTokenInfo[];
-  isProfitable: boolean;
+  tokensInfo: Array<{
+    symbol: string;
+    assetId: string;
+    blockchain: string;
+    decimals: number;
+  }>;
 }
 
 export class FileStorage {
   private storageDir: string;
-  private profitablePath: string;
-  private nonProfitablePath: string;
   private cyclesPath: string;
 
   constructor() {
@@ -41,42 +31,68 @@ export class FileStorage {
     if (!fs.existsSync(this.storageDir)) {
       fs.mkdirSync(this.storageDir, { recursive: true });
     }
-    this.profitablePath = path.join(this.storageDir, 'profitable_routes.json');
-    this.nonProfitablePath = path.join(this.storageDir, 'nonprofitable_routes.json');
-    if (!fs.existsSync(this.profitablePath)) {
-      fs.writeFileSync(this.profitablePath, JSON.stringify([], null, 2));
-    }
-    if (!fs.existsSync(this.nonProfitablePath)) {
-      fs.writeFileSync(this.nonProfitablePath, JSON.stringify([], null, 2));
-    }
     this.cyclesPath = path.join(this.storageDir, 'profitable_cycles.json');
-    if (!fs.existsSync(this.cyclesPath)) fs.writeFileSync(this.cyclesPath, JSON.stringify([]));
-  }
-
-  saveProfitableRoute(route: ScannedRoute): void {
-    this.appendToFile(this.profitablePath, route);
-  }
-
-  saveNonProfitableRoute(route: ScannedRoute): void {
-    this.appendToFile(this.nonProfitablePath, route);
-  }
-
-  saveCycle(cycle: CycleResult) {
-    this.appendToFile(this.cyclesPath, cycle);
-  }
-
-  private appendToFile(filePath: string, route): void {
-    try {
-      let existing: ScannedRoute[] = [];
-      if (fs.existsSync(filePath)) {
-        const content = fs.readFileSync(filePath, 'utf-8');
-        existing = JSON.parse(content);
-      }
-      existing.push(route);
-      fs.writeFileSync(filePath, JSON.stringify(existing, null, 2));
-    } catch (error) {
-      console.error(`Ошибка записи в ${filePath}:`, error);
+    // Инициализируем пустым массивом, только если файл отсутствует
+    if (!fs.existsSync(this.cyclesPath)) {
+      fs.writeFileSync(this.cyclesPath, JSON.stringify([]));
     }
+  }
+
+  saveProfitableCycle(route: ScannedRoute): void {
+    const tempPath = this.cyclesPath + '.tmp';
+    try {
+      // Читаем текущий массив (если файл повреждён, делаем бэкап и начинаем новый)
+      let routes: ScannedRoute[] = [];
+      if (fs.existsSync(this.cyclesPath)) {
+        const content = fs.readFileSync(this.cyclesPath, 'utf-8');
+        if (content.trim()) {
+          try {
+            routes = JSON.parse(content);
+            if (!Array.isArray(routes)) routes = [];
+          } catch (parseErr) {
+            // Повреждённый JSON: бэкапим и начинаем заново
+            const backup = this.cyclesPath + '.broken.' + Date.now();
+            fs.copyFileSync(this.cyclesPath, backup);
+            console.error(`⚠️ Повреждённый файл ${this.cyclesPath} скопирован в ${backup}. Начинаем новый массив.`);
+            routes = [];
+          }
+        }
+      }
+      // Добавляем новый маршрут (можно проверить на уникальность по id, если нужно)
+      // Удаляем старый маршрут с таким же id, чтобы обновить
+      const existingIndex = routes.findIndex(r => r.id === route.id);
+      if (existingIndex !== -1) {
+        routes[existingIndex] = route; // обновляем
+      } else {
+        routes.push(route);
+      }
+      // Пишем во временный файл
+      fs.writeFileSync(tempPath, JSON.stringify(routes, null, 2));
+      // Атомарно заменяем основной файл
+      fs.renameSync(tempPath, this.cyclesPath);
+    } catch (error) {
+      console.error(`Ошибка при сохранении маршрута в ${this.cyclesPath}:`, error);
+      // Если временный файл остался, удаляем его
+      if (fs.existsSync(tempPath)) {
+        fs.unlinkSync(tempPath);
+      }
+    }
+  }
+
+  // Дополнительный метод для чтения всех маршрутов (если понадобится)
+  getAllRoutes(): ScannedRoute[] {
+    try {
+      if (fs.existsSync(this.cyclesPath)) {
+        const content = fs.readFileSync(this.cyclesPath, 'utf-8');
+        if (content.trim()) {
+          const parsed = JSON.parse(content);
+          if (Array.isArray(parsed)) return parsed;
+        }
+      }
+    } catch (e) {
+      console.error('Ошибка чтения маршрутов:', e);
+    }
+    return [];
   }
 }
 

@@ -1,3 +1,5 @@
+// src/intents/utils/signer.ts
+
 import 'dotenv/config';
 import { getNearIntentsSigner, NearSignerContext } from './near-config';
 

@@ -47,10 +47,6 @@ export class RateCache {
             originAsset: from.assetId,
             destinationAsset: to.assetId,
             amount: amountIn,
-            depositType: 'INTENTS',
-            recipientType: 'INTENTS',
-            recipient: this.getAddress(),
-            refundTo: this.getAddress(),
             dry: true,
           });
           if (quote.quote?.amountOutUsd) {
@@ -90,6 +86,18 @@ export class RateCache {
     const data = { timestamp: this.lastUpdate, entries: Object.fromEntries(this.cache) };
     fs.writeFileSync(this.cachePath, JSON.stringify(data, null, 2));
   }
+
+  // в services/rateCache.ts
+async rateCacheLoad(): Promise<void> {
+  try {
+    const data = JSON.parse(fs.readFileSync(this.cachePath, 'utf-8'));
+    this.cache = new Map(Object.entries(data.entries));
+    this.lastUpdate = data.timestamp;
+    console.log(`📂 Кэш загружен из файла (${this.cache.size} записей, от ${new Date(this.lastUpdate).toISOString()})`);
+  } catch (e) {
+    console.log('Файл кэша не найден или повреждён, будет создан новый');
+  }
+}
 
   private load() {
     try {

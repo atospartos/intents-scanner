@@ -1,3 +1,5 @@
+// src/intents/utils/config.ts
+
 import { IntentsSDK } from '@defuse-protocol/intents-sdk';
 import { JsonRpcProvider } from 'near-api-js';
 

@@ -1,10 +1,10 @@
 import { Token } from '../clients/nearIntentsClient';
 import { RateCache } from './rateCache';
 import { config } from '../config';
-import { fileStorage, CycleResult } from './fileStorage';
+import { fileStorage, CycleResult, ScannedRoute } from './fileStorage';
 
 export class FastScanner {
-  constructor(private rateCache: RateCache, private testAmountUSD: number) {}
+  constructor(private rateCache: RateCache, private testAmountUSD: number) { }
 
   async findProfitableCycles(
     allTokens: Token[],          // все токены (и стейблы, и рабочие)
@@ -22,15 +22,22 @@ export class FastScanner {
       if (path.length > 2 && last.assetId === startTokenId) {
         const profitPercent = (currentProfit - 1) * 100;
         if (profitPercent >= minProfitPercent && path.length <= maxSteps + 1) {
-          const cycle: CycleResult = {
+          const testAmountUSD = this.testAmountUSD;
+          const usdOut = testAmountUSD * currentProfit;
+          const route: ScannedRoute = {
             id: path.map(t => t.symbol).join('→'),
-            path: path.map(t => `${t.symbol}(${t.blockchain})`),
+            pathStr: path.map(t => `${t.symbol}(${t.blockchain})`).join(' → '),
             profitPercent,
-            timestamp: Date.now(),
-            steps: path.length - 1,
+            testAmountUSD,
+            tokensInfo: path.map(token => ({
+              symbol: token.symbol,
+              assetId: token.assetId,
+              blockchain: token.blockchain,
+              decimals: token.decimals,
+            })),
           };
-          cycles.push(cycle);
-          fileStorage.saveCycle(cycle); // запись по ходу
+          // Сохраняем в profitable_cycles.json
+          fileStorage.saveProfitableCycle(route);
         }
         return;
       }

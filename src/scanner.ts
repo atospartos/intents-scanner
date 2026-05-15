@@ -6,28 +6,29 @@ import { config } from './config';
 async function main() {
   console.log('🚀 Адаптивный сканер циклов (со стейблами и без)');
 
-  const stables = await tokenManager.getAllStablecoins();
-  const rawWorking = await tokenManager.getWorkingTokens();
+  // 1. Получаем стейблы и рабочие токены (без фильтрации ликвидности)
+  const stables = await tokenManager.getStableToken();       // массив
+  const workingTokens = await tokenManager.getAllWorkingTokens(); // массив
 
-  // Получаем токены с хотя бы одной связью со стейблом
-  const liquidTokensInfo = await tokenManager.getTokensWithAnyLiquidity(
-    rawWorking,
-    stables,
-    config.trading.testAmountUSD
-  );
-  const workingTokens = liquidTokensInfo.map(info => info.token);
-  console.log(`🔹 Токенов, пригодных для построения графа: ${workingTokens.length}`);
+  console.log(`💰 Стейблкоинов: ${stables}`);
+  console.log(`🔹 Рабочих токенов (без фильтрации ликвидности): ${workingTokens.length}`);
 
   if (workingTokens.length === 0) {
-    console.log('❌ Нет токенов с ликвидностью');
+    console.log('❌ Нет токенов для построения графа');
     return;
   }
 
-  // Строим кэш для всех токенов (стейблы + рабочие)
-  const allTokensForCache = [...stables, ...workingTokens];
-  const rateCache = new RateCache();
-  await rateCache.ensureFresh(allTokensForCache, config.trading.testAmountUSD);
+  // 2. Формируем единый массив для кэша (стейблы + рабочие)
+  const allTokensForCache = [stables, ...workingTokens];
 
+  // 3. Загружаем кэш котировок (или создаём, если нет / устарел)
+  const rateCache = new RateCache();
+  // Для отладки: если файл storage/rate_cache.json уже существует, можно временно закомментировать следующую строку
+  // и просто загрузить кэш без обновления:
+  await rateCache.rateCacheLoad(); // нужно добавить такой метод в RateCache (см. ниже)
+  // await rateCache.ensureFresh(allTokensForCache, config.trading.testAmountUSD);
+
+  // 4. Сканируем циклы
   const scanner = new FastScanner(rateCache, config.trading.testAmountUSD);
   const cycles = await scanner.findProfitableCycles(
     allTokensForCache,

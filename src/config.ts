@@ -22,7 +22,7 @@ export const config = {
 
   scan: {
     minLiquidityRatio: 0.95,          // выход должен быть ≥99% от входа
-    minProfitPercent: 0.001,           // минимальная прибыль 0.01%
+    minProfitPercent: 0.01,           // минимальная прибыль 0.01%
     maxWorkingTokens: 100,
     maxCycleLength: 5,                // макс. шагов в цикле (3,4,5)
     enableStableCycles: true,         // искать циклы со стейблами
@@ -35,17 +35,17 @@ export const config = {
 
   trading: {
     slippageToleranceBps: parseInt(process.env.SLIPPAGE_TOLERANCE_BPS || '100'),
-    testAmountUSD: parseFloat(process.env.TEST_AMOUNT_USD || '100'),
+    testAmountUSD: parseFloat(process.env.TEST_AMOUNT_USD || '1'),
   },
 
   filters: {
     excludeSymbols: [],
-    minPrice: 0.001,
-    maxPrice: 100000,
+    minPrice: 0.0000000000001,
+    maxPrice: 100000000000000,
   },
 
   stableSymbols: ['USDC'],
-  allowedBlockchains: ['near', 'eth', 'arb', 'base', 'bsc', 'avax', 'pol', 'op'],
+  allowedBlockchains: ['near', 'eth', 'arb', 'base', 'bsc', 'avax', 'pol', 'op', 'sol', 'zec', 'dash', 'ton'],
 };
 
 if (!config.api.jwtToken) throw new Error('❌ JWT_TOKEN не задан');

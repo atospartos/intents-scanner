@@ -45,7 +45,9 @@ export class PathGenerator {
       tokens: p.tokens.map(t => ({ symbol: t.symbol, assetId: t.assetId, blockchain: t.blockchain, decimals: t.decimals })),
       steps: p.steps.map(s => ({
         fromSymbol: s.from.symbol,
+        fromId:s.from.assetId,
         toSymbol: s.to.symbol,
+        toId:s.to.assetId,
         depositType: s.depositType,
         recipientType: s.recipientType,
       })),

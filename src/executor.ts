@@ -2,11 +2,13 @@
 import 'dotenv/config';
 import fs from 'fs';
 import path from 'path';
-import { getSwapQuote, submitSwap } from './intents/swap-tokens-near.js';
+import { submitSwap, getSwapQuote } from './intents/swap-tokens-near.js';
 import { getTokenBalances } from './intents/get-balances.js';
 import { getNearIntentsSigner } from './intents/utils/near-config.js';
 import { getTokenById } from './intents/get-tokens-list.js';
 import { parseUnits, formatUnits } from 'viem';
+import { OpenAPI } from '@defuse-protocol/one-click-sdk-typescript';
+
 
 // ==================== ЛОГГЕР ====================
 const LOG_DIR = './logs';
@@ -22,10 +24,10 @@ function log(message: string, level: 'INFO' | 'ERROR' | 'WARN' | 'DEBUG' = 'INFO
 }
 
 // ==================== КОНФИГ ====================
-const STORAGE_FILE = './storage/profitable_routes.json';
+const STORAGE_FILE = './storage/profitable_cycles.json';
 const PROFIT_TOLERANCE = parseFloat(process.env.PROFIT_TOLERANCE || '0.8');    // 80%
 const LOOP_INTERVAL_MS = parseInt(process.env.LOOP_INTERVAL_MS || '15000', 10);
-const DRY_RUN = process.env.DRY_RUN_ONLY === 'true' || process.argv.includes('--dry-run');
+const DRY_RUN = process.env.DRY_RUN_ONLY === 'true';
 
 const EXECUTION_OPTIONS = {
   maxRetries: parseInt(process.env.MAX_RETRIES || '3', 10),
@@ -52,37 +54,65 @@ interface ScannedRoute {
   tokensInfo: StoredTokenInfo[];
 }
 
+async function withTimeout<T>(promise: Promise<T>, ms: number, errorMsg: string): Promise<T> {
+  let timeoutId: NodeJS.Timeout;
+  const timeoutPromise = new Promise<never>((_, reject) => {
+    timeoutId = setTimeout(() => reject(new Error(errorMsg)), ms);
+  });
+  try {
+    return await Promise.race([promise, timeoutPromise]);
+  } finally {
+    clearTimeout(timeoutId);
+  }
+}
+
 // ==================== ФУНКЦИИ ====================
 async function recheckRoute(route: ScannedRoute): Promise<number | null> {
-  const { tokensInfo, testAmountUSD } = route;
-  const fullTokens = [];
-  for (const info of tokensInfo) {
-    const token = await getTokenById({ intents_token_id: info.assetId });
-    if (!token) {
-      log(`Token not found: ${info.assetId}`, 'WARN');
-      return null;
+  try {
+    const { tokensInfo, testAmountUSD } = route;
+    log(`Recheck: ${route.pathStr} with ${testAmountUSD} USD`, 'DEBUG');
+
+    const fullTokens = [];
+    for (const info of tokensInfo) {
+      const token = await getTokenById({ intents_token_id: info.assetId });
+      if (!token) {
+        log(`Token not found: ${info.assetId}`, 'WARN');
+        return null;
+      }
+      fullTokens.push(token);
     }
-    fullTokens.push(token);
-  }
-  const firstToken = fullTokens[0];
-  let currentAmount = parseUnits(testAmountUSD.toString(), firstToken.decimals);
-  for (let i = 0; i < tokensInfo.length; i++) {
-    const from = fullTokens[i];
-    const to = fullTokens[(i + 1) % tokensInfo.length];
-    const quote = await getSwapQuote({
-      originAsset: from,
-      destinationAsset: to,
-      amountIn: currentAmount.toString(),
-    });
-    if (!quote.quote?.amountOut) {
-      log(`No quote for ${from.symbol}->${to.symbol}`, 'WARN');
-      return null;
+    const firstToken = fullTokens[0];
+    let currentAmount = parseUnits(testAmountUSD.toString(), firstToken.decimals);
+
+    for (let i = 0; i < tokensInfo.length; i++) {
+      const from = fullTokens[i];
+      const to = fullTokens[(i + 1) % tokensInfo.length];
+      log(`Getting quote for ${from.symbol} -> ${to.symbol} (${i + 1}/${tokensInfo.length})`, 'DEBUG');
+      const start = Date.now();
+      const quote = await withTimeout(
+        getSwapQuote({
+          originAsset: from,
+          destinationAsset: to,
+          amountIn: currentAmount.toString(),
+        }),
+        30000,
+        `Timeout getting quote for ${from.symbol}->${to.symbol}`
+      );
+      const duration = Date.now() - start;
+      log(`Quote received in ${duration}ms`, 'DEBUG');
+      if (!quote.quote?.amountOut) {
+        log(`No amountOut for ${from.symbol}->${to.symbol}`, 'WARN');
+        return null;
+      }
+      currentAmount = BigInt(quote.quote.amountOut);
     }
-    currentAmount = BigInt(quote.quote.amountOut);
+    const finalAmount = parseFloat(formatUnits(currentAmount, firstToken.decimals));
+    const finalUSD = finalAmount * firstToken.price;
+    return ((finalUSD - testAmountUSD) / testAmountUSD) * 100;
+  } catch (err) {
+    log(`Recheck error: ${err.message}`, 'ERROR');
+    return null; // любая ошибка – маршрут невалиден
   }
-  const finalAmount = parseFloat(formatUnits(currentAmount, firstToken.decimals));
-  const finalUSD = finalAmount * firstToken.price;
-  return ((finalUSD - testAmountUSD) / testAmountUSD) * 100;
 }
 
 async function executeRoute(route: ScannedRoute): Promise<boolean> {
@@ -111,7 +141,7 @@ async function executeRoute(route: ScannedRoute): Promise<boolean> {
   for (let stepIdx = 0; stepIdx < tokensInfo.length; stepIdx++) {
     const from = fullTokens[stepIdx];
     const to = fullTokens[(stepIdx + 1) % tokensInfo.length];
-    log(`Step ${stepIdx+1}/${tokensInfo.length}: ${from.symbol} -> ${to.symbol}`, 'INFO');
+    log(`Step ${stepIdx + 1}/${tokensInfo.length}: ${from.symbol} -> ${to.symbol}`, 'INFO');
 
     let success = false;
     for (let attempt = 1; attempt <= EXECUTION_OPTIONS.maxRetries; attempt++) {
@@ -126,11 +156,15 @@ async function executeRoute(route: ScannedRoute): Promise<boolean> {
         log(`Balance OK: ${fromBalance.balanceFormatted} ${from.symbol}`);
 
         // Get quote
-        const quote = await getSwapQuote({
-          originAsset: from,
-          destinationAsset: to,
-          amountIn: currentAmount.toString(),
-        });
+        const quote = await withTimeout(
+          getSwapQuote({
+            originAsset: from,
+            destinationAsset: to,
+            amountIn: currentAmount.toString(),
+          }),
+          30000,
+          `Timeout getting quote for ${from.symbol}->${to.symbol}`
+        );
         if (!quote.quote?.amountOut) throw new Error('Empty quote');
         log(`Quote: ${formatUnits(BigInt(quote.quote.amountIn), from.decimals)} ${from.symbol} -> ${formatUnits(BigInt(quote.quote.amountOut), to.decimals)} ${to.symbol}`);
 
@@ -161,7 +195,7 @@ async function executeRoute(route: ScannedRoute): Promise<boolean> {
       }
     }
     if (!success) {
-      log(`Step ${stepIdx+1} failed, aborting route`, 'ERROR');
+      log(`Step ${stepIdx + 1} failed, aborting route`, 'ERROR');
       return false;
     }
   }
@@ -173,13 +207,17 @@ async function executeRoute(route: ScannedRoute): Promise<boolean> {
 let shutdown = false;
 process.on('SIGINT', () => { log('Received SIGINT, shutting down...', 'WARN'); shutdown = true; });
 process.on('SIGTERM', () => { log('Received SIGTERM, shutting down...', 'WARN'); shutdown = true; });
-
+OpenAPI.BASE = process.env.API_BASE_URL || 'https://1click.chaindefuser.com';
+OpenAPI.TOKEN = process.env.JWT_TOKEN;
 async function main() {
+  OpenAPI.BASE = process.env.API_BASE_URL || 'https://1click.chaindefuser.com';
+  OpenAPI.TOKEN = process.env.JWT_TOKEN;
   log('Executor main loop started');
   while (!shutdown) {
     try {
+
       if (!fs.existsSync(STORAGE_FILE)) {
-        log(`Storage file not found: ${STORAGE_FILE}, waiting...`, 'DEBUG');
+        log(`Storage file not found: ${STORAGE_FILE}, waiting...`, 'DEBUG')
         await new Promise(r => setTimeout(r, LOOP_INTERVAL_MS));
         continue;
       }
@@ -195,7 +233,7 @@ async function main() {
         await new Promise(r => setTimeout(r, LOOP_INTERVAL_MS));
         continue;
       }
-      const best = routes.sort((a,b) => b.profitPercent - a.profitPercent)[0];
+      const best = routes.sort((a, b) => b.profitPercent - a.profitPercent)[0];
       log(`Best route: ${best.pathStr} (profit ${best.profitPercent.toFixed(4)}%)`);
 
       // Re-check fresh profit
@@ -225,10 +263,12 @@ async function main() {
         log(`Execution failed, keeping route for later retry`);
       }
       await new Promise(r => setTimeout(r, LOOP_INTERVAL_MS));
+
     } catch (err) {
       log(`Loop error: ${err.stack || err.message}`, 'ERROR');
       await new Promise(r => setTimeout(r, LOOP_INTERVAL_MS));
     }
+
   }
   log('Executor stopped');
   logStream.end();

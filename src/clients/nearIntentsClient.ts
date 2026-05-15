@@ -1,4 +1,10 @@
 import axios, { AxiosInstance } from 'axios';
+import {
+  OneClickService,
+  QuoteRequest,
+  QuoteResponse,
+  OpenAPI
+} from '@defuse-protocol/one-click-sdk-typescript';
 import { config } from '../config';
 
 export interface Token {
@@ -11,21 +17,21 @@ export interface Token {
   contractAddress?: string;
 }
 
-export interface QuoteResponse {
-  quote?: {
-    amountIn: string;
-    amountInFormatted: string;
-    amountInUsd: string;
-    amountOut: string;
-    amountOutFormatted: string;
-    amountOutUsd: string;
-    minAmountOut: string;
-    timeEstimate: number;
-    depositAddress?: string;
-    transactionId?: string;
-  };
-  error?: string;
-}
+// export interface QuoteResponse {
+//   quote?: {
+//     amountIn: string;
+//     amountInFormatted: string;
+//     amountInUsd: string;
+//     amountOut: string;
+//     amountOutFormatted: string;
+//     amountOutUsd: string;
+//     minAmountOut: string;
+//     timeEstimate: number;
+//     depositAddress?: string;
+//     transactionId?: string;
+//   };
+//   error?: string;
+// }
 
 export class NearIntentsClient {
   private client: AxiosInstance;
@@ -52,35 +58,27 @@ export class NearIntentsClient {
     originAsset: string;
     destinationAsset: string;
     amount: string;
-    depositType: 'INTENTS';
-    recipientType: 'INTENTS';
-    recipient: string;
-    refundTo: string;
     dry: boolean;
-    slippageTolerance?: number;
-    swapType?: 'EXACT_INPUT' | 'EXACT_OUTPUT';
     deadline?: string;
     quoteWaitingTimeMs?: number;
   }): Promise<QuoteResponse> {
+    OpenAPI.BASE = 'https://1click.chaindefuser.com';
+    OpenAPI.TOKEN = process.env.JWT_TOKEN;
     const defaultDeadline = new Date(Date.now() + 60 * 1000).toISOString();
-
-    // Согласно документации, refundType должен соответствовать depositType:
-    // INTENTS -> INTENTS, ORIGIN_CHAIN -> ORIGIN_CHAIN, DESTINATION_CHAIN не используется для refund.
-    const refundType = params.depositType === 'INTENTS';
-
+    
     const request = {
       dry: params.dry,
-      swapType: params.swapType || 'EXACT_INPUT',
-      slippageTolerance: params.slippageTolerance ?? config.trading.slippageToleranceBps,
+      swapType: QuoteRequest.swapType.EXACT_INPUT,
+      slippageTolerance: config.trading.slippageToleranceBps,
       originAsset: params.originAsset,
-      depositType: params.depositType,
+      depositType: QuoteRequest.depositType.INTENTS,
       destinationAsset: params.destinationAsset,
       amount: params.amount,
-      refundTo: params.refundTo,
-      refundType,
-      recipient: params.recipient,
-      recipientType: params.recipientType,
-      deadline: params.deadline || defaultDeadline,
+      refundTo: config.addresses.near,
+      refundType: QuoteRequest.refundType.INTENTS,
+      recipient: config.addresses.near,
+      recipientType: QuoteRequest.recipientType.INTENTS,
+      deadline: defaultDeadline,
       quoteWaitingTimeMs: params.quoteWaitingTimeMs || 5000,
     };
     const response = await this.client.post('/v0/quote', request);

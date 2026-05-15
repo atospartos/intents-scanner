@@ -1,29 +1,4 @@
-/**
- *  Get Token Balances
- *
- *  Reads all token balances held inside your intents account on the `intents.near` contract.
- *  Works with both NEAR (NEP-413) and EVM (ERC-191) signers — set the matching
- *  private key in your `.env` and the script auto-detects the signer type.
- *
- *  Why intents balances?
- *  --------------------
- *  NEAR Intents maintains a unified multi-token ledger inside the `intents.near` smart contract.
- *  When you deposit tokens (from any chain), they appear as balances in this ledger.
- *  All SDK operations (swaps, transfers, withdrawals) operate on these internal balances —
- *  not on your external wallet directly.
- *
- *  How it works:
- *   1. Derives your intents-internal account ID from your wallet credentials
- *   2. Fetches the full supported-token list (to know which token IDs to query)
- *   3. Calls `mt_batch_balance_of` on `intents.near` to get all balances in one RPC call
- *   4. Filters out zero balances and displays the result as a formatted table
- *
- *  Run:  pnpm sdk/get-balances
- *
- */
-
 import { authIdentity, AuthMethod } from '@defuse-protocol/internal-utils';
-import { fileURLToPath } from 'node:url';
 import { formatUnits } from 'viem';
 import { getTokens } from './get-tokens-list';
 import { nearJsonRpcProvider } from './utils/config';
@@ -106,10 +81,9 @@ const main = async () => {
   );
 };
 
-// Only run when executed directly
-if (process.argv[1] === fileURLToPath(import.meta.url)) {
-  main().catch((error) => {
-    console.error(error);
-    process.exit(1);
-  });
-}
+// if (require.main === module) {
+//   main().catch((error) => {
+//     console.error(error);
+//     process.exit(1);
+//   });
+// }

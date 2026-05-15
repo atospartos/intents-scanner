@@ -68,35 +68,3 @@ export const getTokenBySymbolAndBlockchain = async ({
     (token) => token.symbol === symbol && token.blockchain === blockchain,
   );
 };
-
-async function main() {
-  console.log('Fetching supported tokens...');
-
-  // Query the full token registry — returns tokens from all supported chains
-  const tokens = await getTokens();
-  console.log(`Found ${tokens.length} tokens:\n`);
-
-  // Display a summary table with the most useful fields
-  console.table(
-    tokens.map((token) => ({
-      assetName: token.symbol, // Human-readable ticker (e.g. "USDC", "NEAR")
-      intentsTokenId: token.assetId, // Unique ID used across all SDK operations
-      decimals: token.decimals, // Token precision (e.g. 24 for NEAR, 6 for USDC)
-    })),
-  );
-
-  // Show the raw response shape so you know what fields are available
-  if (tokens.length > 0) {
-    console.log(
-      `\nResponse format example:\n${JSON.stringify(tokens[0], null, 2)}\n`,
-    );
-  }
-}
-
-// Only run when executed directly (not when imported by other examples)
-if (process.argv[1] === fileURLToPath(import.meta.url)) {
-  main().catch((error) => {
-    console.error(error);
-    process.exit(1);
-  });
-}
