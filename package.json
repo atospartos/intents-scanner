@@ -4,10 +4,9 @@
   "type": "module",
   "scripts": {
     "build": "tsc",
-    "start": "node dist/scanner.js",
-    "dev": "tsx src/scanner.ts",
-    "executor": "tsx src/executor.ts",
-    "scan": "tsx src/scanner.ts"
+    "start": "node dist/scanner-realtime.js",
+    "scan": "tsx src/scanner-realtime.ts",
+    "list": "tsx src/tokensRequest.ts"
   },
   "dependencies": {
     "@defuse-protocol/intents-sdk": "^0.48.0",
@@ -18,6 +17,8 @@
     "axios": "^1.7.0",
     "dotenv": "^17.2.1",
     "near-api-js": "^7.0.4",
+    "near-intents-cli": "^0.3.1",
+    "p-limit": "^7.3.0",
     "viem": "^2.45.1",
     "zod": "^4.3.6"
   },

@@ -1,10 +1,6 @@
+// clients/nearIntentsClient.ts
 import axios, { AxiosInstance } from 'axios';
-import {
-  OneClickService,
-  QuoteRequest,
-  QuoteResponse,
-  OpenAPI
-} from '@defuse-protocol/one-click-sdk-typescript';
+import { QuoteRequest, QuoteResponse } from '@defuse-protocol/one-click-sdk-typescript';
 import { config } from '../config';
 
 export interface Token {
@@ -17,22 +13,6 @@ export interface Token {
   contractAddress?: string;
 }
 
-// export interface QuoteResponse {
-//   quote?: {
-//     amountIn: string;
-//     amountInFormatted: string;
-//     amountInUsd: string;
-//     amountOut: string;
-//     amountOutFormatted: string;
-//     amountOutUsd: string;
-//     minAmountOut: string;
-//     timeEstimate: number;
-//     depositAddress?: string;
-//     transactionId?: string;
-//   };
-//   error?: string;
-// }
-
 export class NearIntentsClient {
   private client: AxiosInstance;
 
@@ -40,18 +20,8 @@ export class NearIntentsClient {
     this.client = axios.create({
       baseURL: config.api.baseUrl,
       timeout: config.api.timeout,
-      maxContentLength: Infinity,
-      maxBodyLength: Infinity,
-      headers: {
-        'Authorization': `Bearer ${config.api.jwtToken}`,
-        'Content-Type': 'application/json',
-      },
+      headers: { 'Authorization': `Bearer ${config.api.jwtToken}`, 'Content-Type': 'application/json' },
     });
-  }
-
-  async getTokens(): Promise<Token[]> {
-    const response = await this.client.get<Token[]>('/v0/tokens');
-    return response.data;
   }
 
   async getQuote(params: {
@@ -59,13 +29,8 @@ export class NearIntentsClient {
     destinationAsset: string;
     amount: string;
     dry: boolean;
-    deadline?: string;
     quoteWaitingTimeMs?: number;
   }): Promise<QuoteResponse> {
-    OpenAPI.BASE = 'https://1click.chaindefuser.com';
-    OpenAPI.TOKEN = process.env.JWT_TOKEN;
-    const defaultDeadline = new Date(Date.now() + 60 * 1000).toISOString();
-    
     const request = {
       dry: params.dry,
       swapType: QuoteRequest.swapType.EXACT_INPUT,
@@ -78,17 +43,22 @@ export class NearIntentsClient {
       refundType: QuoteRequest.refundType.INTENTS,
       recipient: config.addresses.near,
       recipientType: QuoteRequest.recipientType.INTENTS,
-      deadline: defaultDeadline,
-      quoteWaitingTimeMs: params.quoteWaitingTimeMs || 5000,
+      deadline: new Date(Date.now() + 60 * 1000).toISOString(),
+      quoteWaitingTimeMs: params.quoteWaitingTimeMs || 3000,
     };
     const response = await this.client.post('/v0/quote', request);
     return response.data;
   }
 
-  async getStatus(transactionId: string): Promise<{ status: string }> {
-    const response = await this.client.get(`/v0/status/${transactionId}`);
+  async getTokens(): Promise<Token[]> {
+    const response = await this.client.get<Token[]>('/v0/tokens');
     return response.data;
+  }
+
+  async getTokenById(assetId: string): Promise<Token | undefined> {
+    const tokens = await this.getTokens();
+    return tokens.find(t => t.assetId === assetId);
   }
 }
 
-export const nearIntentsClient = new NearIntentsClient();
+export const nearIntentsClient = new NearIntentsClient
