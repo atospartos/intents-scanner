@@ -1,4 +1,3 @@
-// services/RouteVerifier.ts
 import { RateLimitedQueue } from './RateLimitedQueue';
 import { GraphManager } from './GraphManager';
 import { ScannedRoute, fileStorage } from './fileStorage';
@@ -9,14 +8,18 @@ export class RouteVerifier {
   private queue: RateLimitedQueue;
   private graphManager: GraphManager;
   private cache: Map<string, { rate: number; timestamp: number }> = new Map();
-  private cacheTTL = 2000;
+  private cacheTTL = 60000;
 
   constructor(graphManager: GraphManager, queue: RateLimitedQueue) {
     this.graphManager = graphManager;
     this.queue = queue;
   }
 
-  private async getRate(from: Token, to: Token, amountInRaw: string): Promise<number | null> {
+  /**
+   * Получает свежую котировку (высокий приоритет) и, если успешно,
+   * обновляет граф через graphManager.updateEdge.
+   */
+  private async getRateAndUpdate(from: Token, to: Token, amountInRaw: string): Promise<number | null> {
     const key = `${from.assetId}|${to.assetId}|${amountInRaw}`;
     const cached = this.cache.get(key);
     if (cached && Date.now() - cached.timestamp < this.cacheTTL) {
@@ -28,48 +31,62 @@ export class RouteVerifier {
         destinationAsset: to.assetId,
         amount: amountInRaw,
         dry: true,
-        quoteWaitingTimeMs: 5000,
+        quoteWaitingTimeMs: 3000,
       }, 0);
-      if (quote?.quote?.amountOutUsd) {
+      if (quote?.quote?.amountOutUsd && quote.quote.amountOut && parseFloat(quote.quote.amountOut) > 0) {
         const inUsd = parseFloat(quote.quote.amountInUsd);
         const outUsd = parseFloat(quote.quote.amountOutUsd);
         const rate = outUsd / inUsd;
+        // Обновляем граф (перезаписываем ребро)
+        this.graphManager.updateEdge(from.assetId, to.assetId, rate);
+        // Кэшируем локально
         this.cache.set(key, { rate, timestamp: Date.now() });
         return rate;
+      } else {
+        console.warn(`RouteVerifier: no valid quote for ${from.symbol}->${to.symbol}`);
       }
-    } catch (e) {}
+    } catch (err) {
+      console.error(`RouteVerifier: error getting quote for ${from.symbol}->${to.symbol}:`, err);
+    }
     return null;
   }
 
-  async verifyRoute(cycle: { path: Token[] }): Promise<ScannedRoute | null> {
-    const { path } = cycle;
+  async verifyPath(path: Token[]): Promise<ScannedRoute | null> {
+    if (path.length < 2) return null;
     const testAmountUSD = config.trading.testAmountUSD;
     const startToken = path[0];
     const startPrice = parseFloat(startToken.price);
     if (isNaN(startPrice)) return null;
-    const startAmountRaw = Math.floor((testAmountUSD / startPrice) * Math.pow(10, startToken.decimals)).toString();
+    let currentAmountRaw = Math.floor((testAmountUSD / startPrice) * Math.pow(10, startToken.decimals)).toString();
 
-    const stepPromises: Promise<number | null>[] = [];
-    for (let i = 0; i < path.length; i++) {
+    const stepRates: number[] = [];
+    for (let i = 0; i < path.length - 1; i++) {
       const from = path[i];
-      const to = path[(i + 1) % path.length];
-      if (from.assetId === to.assetId) continue;
-      stepPromises.push(this.getRate(from, to, startAmountRaw));
+      const to = path[i + 1];
+      const rate = await this.getRateAndUpdate(from, to, currentAmountRaw);
+      if (rate === null) return null;
+      stepRates.push(rate);
+      currentAmountRaw = Math.floor(parseInt(currentAmountRaw) * rate).toString();
     }
-    const rates = await Promise.all(stepPromises);
-    if (rates.some(r => r === null)) return null;
+    // Замыкающий шаг
+    const last = path[path.length - 1];
+    const first = path[0];
+    const closingRate = await this.getRateAndUpdate(last, first, currentAmountRaw);
+    if (closingRate === null) return null;
+    stepRates.push(closingRate);
 
     let totalRate = 1;
-    for (const r of rates) totalRate *= r!;
+    for (const r of stepRates) totalRate *= r;
     const profitPercent = (totalRate - 1) * 100;
 
     if (profitPercent >= config.scan.minProfitPercent && profitPercent < 50) {
+      const fullPath = [...path, first];
       const scannedRoute: ScannedRoute = {
-        id: path.map(t => t.symbol).join('→'),
-        pathStr: path.map(t => `${t.symbol}(${t.blockchain})`).join(' → '),
+        id: fullPath.map(t => t.symbol).join('→'),
+        pathStr: fullPath.map(t => `${t.symbol}(${t.blockchain})`).join(' → '),
         profitPercent,
         testAmountUSD,
-        tokensInfo: path.map(t => ({
+        tokensInfo: fullPath.map(t => ({
           symbol: t.symbol,
           assetId: t.assetId,
           blockchain: t.blockchain,

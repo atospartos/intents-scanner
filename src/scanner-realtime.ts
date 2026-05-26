@@ -1,4 +1,3 @@
-// scanner-realtime.ts
 import 'dotenv/config';
 import { GraphManager } from './services/GraphManager';
 import { RouteVerifier } from './services/RouteVerifier';
@@ -7,31 +6,32 @@ import { RateLimitedQueue } from './services/RateLimitedQueue';
 import { config } from './config';
 
 async function main() {
-  console.log('🚀 Starting real-time arbitrage scanner...');
+  console.log('🚀 Starting real-time arbitrage scanner (continuous loop)...');
   const queue = new RateLimitedQueue();
-  const graphManager = new GraphManager(queue);
+  const graphManager = new GraphManager();
   await graphManager.init();
   console.log(`✅ Graph ready. Edges: ${graphManager.getEdgesCount()}`);
 
   const verifier = new RouteVerifier(graphManager, queue);
   const generator = new RouteGenerator(graphManager);
 
-  // Запуск периодической генерации и верификации маршрутов
-  setInterval(async () => {
-    console.log('\n🔍 Scanning for new cycles...');
-    await generator.findAndEmitCycles(async (cycle) => {
-      const profitable = await verifier.verifyRoute(cycle);
-      if (profitable) {
-        console.log(`✅ Saved profitable route: ${profitable.pathStr}`);
-      }
-    });
-  }, 30000); // каждые 30 секунд
+  let iteration = 0;
 
-  process.on('SIGINT', () => {
-    console.log('Shutting down...');
-    graphManager.stop();
-    process.exit(0);
+  iteration++;
+  console.log(`\n🔍 Iteration ${iteration}: Searching for cycles...`);
+  const cycles: { path: any[] }[] = [];
+  await generator.findAndEmitCycles(async (cycle) => {
+    cycles.push(cycle);
   });
+  console.log(`Found ${cycles.length} potential cycles. Verifying up to 5...`);
+  let verified = 0;
+  for (const cycle of cycles.slice(0, 5)) {
+    const profitable = await verifier.verifyPath(cycle.path);
+    if (profitable) verified++;
+    console.log(`Verified ${verified} profitable routes.`);
+  }
+  console.log(`Verified ${verified} profitable routes.`);
 }
+
 
 main().catch(console.error);

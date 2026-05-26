@@ -6,7 +6,7 @@ export const config = {
     baseUrl: 'https://1click.chaindefuser.com',
     jwtToken: process.env.JWT_TOKEN || '',
     timeout: 3000,
-    rateLimitPerSecond: 10,
+    rateLimitPerSecond: 5,
   },
 
   // Стейблкоин, на котором начинаем и заканчиваем (должен быть на NEAR)
@@ -25,17 +25,17 @@ export const config = {
     minLiquidityRatio: 0.95,          // выход должен быть ≥99% от входа
     minProfitPercent: 0.1,           // минимальная прибыль 0.01%
     maxWorkingTokens: 100,
-    maxCycleLength: 4,                // макс. шагов в цикле (3,4,5)
+    maxCycleLength: 4,                // макс. шагов в цикле (2,3,4,5)
     enableStableCycles: true,         // искать циклы со стейблами
     enableAltcoinCycles: true,        // искать циклы только между альткоинами
     rateCacheTTL: 60000,              // 60 секунд
-    intervalSec: parseInt(process.env.SCAN_INTERVAL_SEC || '5'),
+    intervalSec: 5,
   },
 
   dryRunOnly: process.env.DRY_RUN_ONLY === 'true',  // для сканера всегда true
 
   trading: {
-    slippageToleranceBps: parseInt(process.env.SLIPPAGE_TOLERANCE_BPS || '30'),
+    slippageToleranceBps: parseInt(process.env.SLIPPAGE_TOLERANCE_BPS || '10'),
     testAmountUSD: 100,
   },
 
@@ -44,9 +44,9 @@ export const config = {
     minPrice: 0.000000000000001,
     maxPrice: 1000000000000000,
   },
-  whitelistAssets: ['ETH', 'WETH', 'USD1', 'USDT', 'USDT0', 'DASH', 'DAI', 'xDAI', 'SOL', 'cbBTC', 'xBTC', 'BTC', 'ZEC', 'wBTC', 'WBTC', 'wNEAR', 'SUI', 'BNB', 'ASTER', 'POL', 'TRX', 'TON', 'OP', 'LTC', 'AVAX', 'XAUT', 'AAVE', 'XRP'],
-  stableSymbols: ['USDC'],
-  allowedBlockchains: ['near', 'eth', 'arb', 'base', 'bsc', 'avax', 'pol', 'op', 'sol', 'zec', 'dash', 'ton', 'gnosis', 'sui', 'ltc', 'aptos', 'cardano', 'stellar', 'xrp', 'btc'],
+  whitelistAssets: ['wNEAR', 'ASTER', 'AAVE', 'POL', 'OP', 'LTC', 'AVAX', 'TRX',, 'SUI', 'BNB',  'XAUT', 'XRP', 'DAI', 'xDAI', 'USDT0', 'USD1', 'USDC', 'USDT', 'ETH', 'WETH', 'BTC', 'WBTC', 'cbBTC', 'xBTC', 'wBTC', 'SOL', 'ZEC', 'DASH', 'TON'], // 
+  stableSymbols: ['USDC', 'USDT'], // 'DAI', 'USDT0', 'USD1', 'xDAI', 'DAI'
+  allowedBlockchains: ['near', 'eth', 'arb', 'base', 'bsc', 'avax', 'pol', 'op', 'sol', 'zec', 'dash', 'ton', 'sui', 'xrp', 'btc'], // 'ltc', 'gnosis', 'aptos', 'cardano', 'stellar',
 };
 
 if (!config.api.jwtToken) throw new Error('❌ JWT_TOKEN не задан');

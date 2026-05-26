@@ -6,6 +6,8 @@
     "build": "tsc",
     "start": "node dist/scanner-realtime.js",
     "scan": "tsx src/scanner-realtime.ts",
+    "verify": "tsx src/verify-saved-cycle.ts",
+    "test": "tsx src/cycle-scanner-only.ts",
     "list": "tsx src/tokensRequest.ts"
   },
   "dependencies": {

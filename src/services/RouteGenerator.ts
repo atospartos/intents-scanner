@@ -1,4 +1,3 @@
-// services/RouteGenerator.ts
 import { Token } from '../clients/nearIntentsClient';
 import { GraphManager } from './GraphManager';
 import { config } from '../config';
@@ -14,42 +13,54 @@ export class RouteGenerator {
   async findAndEmitCycles(callback: (cycle: { path: Token[] }) => Promise<void>): Promise<void> {
     const tokens = this.graphManager.getTokens();
     const stables = tokens.filter(t => config.stableSymbols.includes(t.symbol));
-    console.log(`\n🔄 Searching cycles among ${tokens.length} tokens, stables: ${stables.map(s => `${s.symbol}(${s.blockchain})`).join(', ')}`);
-    let totalCycles = 0;
-    for (const start of stables) {
-      console.log(`  Starting from ${start.symbol} (${start.blockchain})...`);
-      await this.dfs([start], start.assetId, config.scan.maxCycleLength + 1, async (cycle) => {
-        if (cycle) {
-          totalCycles++;
-          await callback(cycle);
-        }
-      });
+    console.log(`🔍 Поиск циклов: ${stables.length} стабильных токенов, ${tokens.length} всего токенов`);
+
+    if (stables.length === 0) {
+      console.warn('Нет стабильных токенов в графе!');
+      return;
     }
-    console.log(`✅ Cycle search finished. Total unique cycles found: ${totalCycles}`);
+
+    for (const start of stables) {
+      console.log(`  Запуск DFS от ${start.symbol}...`);
+      const beforeSize = this.visitedCycles.size;
+      await this.dfs([start], start.assetId, config.scan.maxCycleLength + 1, callback);
+      const afterSize = this.visitedCycles.size;
+      console.log(`    Найдено циклов от ${start.symbol}: ${afterSize - beforeSize}`);
+    }
   }
 
   private async dfs(
     path: Token[],
     startId: string,
     maxDepth: number,
-    callback: (cycle: { path: Token[] } | null) => Promise<void>
+    callback: (cycle: { path: Token[] }) => Promise<void>
   ): Promise<void> {
     const last = path[path.length - 1];
-    // Разрешаем замыкание цикла для длины >= 2 (ранее было >2)
-    if (path.length >= 2 && last.assetId === startId) {
+    const depth = path.length;
+
+    // Логируем текущую вершину на глубине 1-2
+    if (depth <= 2) {
+      console.log(`    DFS глубина ${depth}: ${path.map(t => t.symbol).join('→')}`);
+    }
+
+    if (depth >= 2 && last.assetId === startId) {
       const cycleKey = path.map(t => t.assetId).join('|');
       if (!this.visitedCycles.has(cycleKey)) {
         this.visitedCycles.add(cycleKey);
+        console.log(`✅ НАЙДЕН ЦИКЛ: ${path.map(t => t.symbol).join('→')}`);
         await callback({ path: [...path] });
       }
       return;
     }
-    if (path.length >= maxDepth) return;
+    if (depth >= maxDepth) return;
 
     const neighbors = this.graphManager.getNeighbors(last.assetId);
+    if (depth === 1) {
+      console.log(`      У ${last.symbol} найдено соседей: ${neighbors.length}`);
+    }
+
     for (const next of neighbors) {
-      // Разрешаем замыкание на стартовый токен, даже если он уже есть в пути
-      if (next.assetId === startId && path.length >= 2) {
+      if (next.assetId === startId && depth >= 2) {
         await this.dfs([...path, next], startId, maxDepth, callback);
       } else if (!path.includes(next)) {
         await this.dfs([...path, next], startId, maxDepth, callback);

@@ -1,5 +1,4 @@
-// services/RateLimitedQueue.ts
-import { nearIntentsClient } from '../clients/nearIntentsClient';
+import { nearIntentsClient,  } from '../clients/nearIntentsClient';
 import { QuoteResponse } from '@defuse-protocol/one-click-sdk-typescript';
 import { config } from '../config';
 
@@ -24,7 +23,7 @@ export class RateLimitedQueue {
   private lastCallTime = 0;
 
   constructor() {
-    this.intervalMs = 1000 / config.api.rateLimitPerSecond;
+    this.intervalMs = 1000 / config.api.rateLimitPerSecond; // 200ms при 5 RPS
   }
 
   add(params: QueueTask['params'], priority: number = 5): Promise<QuoteResponse | null> {

@@ -1,0 +1,18 @@
+curl -X POST https://1click.chaindefuser.com/v0/quote \
+  -H "Authorization: Bearer $JWT_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "dry": true,
+    "swapType": "EXACT_INPUT",
+    "slippageTolerance": 100,
+    "originAsset": "nep245:v2_1.omni.hot.tg:137_3hpYoaLtt8MP1Z2GH1U473DMRKgr",
+    "depositType": "INTENTS",
+    "destinationAsset": "nep245:v2_1.omni.hot.tg:56_2CMMyVTGZkeyNZTSvS5sarzfir6g",
+    "amount": "100000000000000000",
+    "refundTo": "partos.near",
+    "refundType": "INTENTS",
+    "recipient": "partos.near",
+    "recipientType": "INTENTS",
+    "deadline": "2026-05-27T00:00:00Z",
+    "quoteWaitingTimeMs": 5000
+  }'
